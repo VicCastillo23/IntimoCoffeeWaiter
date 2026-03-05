@@ -1,0 +1,108 @@
+<resources>
+    <string name="app_name">Intimo Coffee</string>
+    
+    <!-- Navigation -->
+    <string name="nav_home">Inicio</string>
+    <string name="nav_orders">Órdenes</string>
+    <string name="nav_products">Productos</string>
+    <string name="nav_tables">Mesas</string>
+    <string name="nav_reports">Reportes</string>
+    <string name="nav_settings">Configuración</string>
+    
+    <!-- Authentication -->
+    <string name="login_title">Iniciar Sesión</string>
+    <string name="login_username">Usuario</string>
+    <string name="login_password">Contraseña</string>
+    <string name="login_button">Ingresar</string>
+    <string name="logout">Cerrar Sesión</string>
+    
+    <!-- Main Screen -->
+    <string name="welcome_message">Bienvenido a Intimo Coffee</string>
+    <string name="current_shift">Turno Actual</string>
+    <string name="open_shift">Abrir Turno</string>
+    <string name="close_shift">Cerrar Turno</string>
+    
+    <!-- Products -->
+    <string name="products_title">Productos</string>
+    <string name="add_product">Agregar Producto</string>
+    <string name="edit_product">Editar Producto</string>
+    <string name="product_name">Nombre del Producto</string>
+    <string name="product_price">Precio</string>
+    <string name="product_category">Categoría</string>
+    <string name="product_description">Descripción</string>
+    
+    <!-- Categories -->
+    <string name="categories">Categorías</string>
+    <string name="all_categories">Todas</string>
+    <string name="coffee">Café</string>
+    <string name="tea">Té</string>
+    <string name="pastries">Repostería</string>
+    <string name="sandwiches">Sándwiches</string>
+    <string name="beverages">Bebidas</string>
+    
+    <!-- Orders -->
+    <string name="orders_title">Órdenes</string>
+    <string name="new_order">Nueva Orden</string>
+    <string name="order_number">Orden #%1$d</string>
+    <string name="order_status_pending">Pendiente</string>
+    <string name="order_status_preparing">Preparando</string>
+    <string name="order_status_ready">Listo</string>
+    <string name="order_status_delivered">Entregado</string>
+    <string name="order_status_paid">Pagado</string>
+    <string name="order_total">Total: $%1$s</string>
+    
+    <!-- Cart -->
+    <string name="cart">Carrito</string>
+    <string name="cart_empty">Carrito vacío</string>
+    <string name="add_to_cart">Agregar al Carrito</string>
+    <string name="remove_from_cart">Quitar del Carrito</string>
+    <string name="cart_subtotal">Subtotal</string>
+    <string name="cart_tax">Impuestos</string>
+    <string name="cart_total">Total</string>
+    
+    <!-- Tables -->
+    <string name="tables_title">Mesas</string>
+    <string name="table_number">Mesa %1$d</string>
+    <string name="table_free">Libre</string>
+    <string name="table_occupied">Ocupada</string>
+    <string name="table_reserved">Reservada</string>
+    <string name="assign_table">Asignar Mesa</string>
+    
+    <!-- Payments -->
+    <string name="payment_methods">Métodos de Pago</string>
+    <string name="pay_cash">Efectivo</string>
+    <string name="pay_card">Tarjeta</string>
+    <string name="pay_transfer">Transferencia</string>
+    <string name="payment_amount">Monto a Pagar</string>
+    <string name="payment_received">Monto Recibido</string>
+    <string name="payment_change">Cambio</string>
+    <string name="process_payment">Procesar Pago</string>
+    
+    <!-- Common Actions -->
+    <string name="save">Guardar</string>
+    <string name="cancel">Cancelar</string>
+    <string name="delete">Eliminar</string>
+    <string name="edit">Editar</string>
+    <string name="add">Agregar</string>
+    <string name="search">Buscar</string>
+    <string name="filter">Filtrar</string>
+    <string name="clear">Limpiar</string>
+    <string name="confirm">Confirmar</string>
+    
+    <!-- Messages -->
+    <string name="success_message">Operación exitosa</string>
+    <string name="error_message">Error en la operación</string>
+    <string name="loading">Cargando...</string>
+    <string name="no_data">No hay datos disponibles</string>
+    
+    <!-- Units -->
+    <string name="currency">$</string>
+    <string name="quantity">Cant.</string>
+    <string name="unit_price">Precio Unit.</string>
+    
+    <!-- Time -->
+    <string name="today">Hoy</string>
+    <string name="yesterday">Ayer</string>
+    <string name="this_week">Esta Semana</string>
+    <string name="this_month">Este Mes</string>
+</resources>

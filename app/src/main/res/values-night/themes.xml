@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Simple dark theme for compatibility -->
+    <style name="Theme.IntimoCoffeeApp" parent="@android:style/Theme.Material.NoActionBar">
+        <!-- Primary colors -->
+        <item name="android:colorPrimary">@color/white_off</item>
+        <item name="android:colorAccent">@color/gray_lighter</item>
+        <item name="android:colorBackground">@color/black_primary</item>
+        
+        <!-- Status bar -->
+        <item name="android:statusBarColor">@color/black_primary</item>
+        <item name="android:windowLightStatusBar">false</item>
+        
+        <!-- Navigation bar -->
+        <item name="android:navigationBarColor">@color/black_primary</item>
+    </style>
+    
+    <!-- Waiter app dark theme -->
+    <style name="Theme.IntimoCoffeeWaiter" parent="@android:style/Theme.Material.NoActionBar">
+        <!-- Primary colors -->
+        <item name="android:colorPrimary">#2196F3</item>
+        <item name="android:colorAccent">#42A5F5</item>
+        <item name="android:colorBackground">@color/black_primary</item>
+        
+        <!-- Status bar -->
+        <item name="android:statusBarColor">#1976D2</item>
+        <item name="android:windowLightStatusBar">false</item>
+        
+        <!-- Navigation bar -->
+        <item name="android:navigationBarColor">#1976D2</item>
+    </style>
+</resources>

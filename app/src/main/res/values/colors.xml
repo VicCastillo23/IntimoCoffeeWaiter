@@ -1,0 +1,79 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Monochromatic Black/Gray Color Palette -->
+    
+    <!-- Primary Colors -->
+    <color name="black_primary">#000000</color>
+    <color name="gray_dark">#1A1A1A</color>
+    <color name="gray_medium">#333333</color>
+    <color name="gray_light">#666666</color>
+    <color name="gray_lighter">#999999</color>
+    <color name="gray_lightest">#CCCCCC</color>
+    <color name="white_off">#F5F5F5</color>
+    <color name="white_pure">#FFFFFF</color>
+    
+    <!-- Material 3 Color System -->
+    <color name="md_theme_light_primary">@color/black_primary</color>
+    <color name="md_theme_light_onPrimary">@color/white_pure</color>
+    <color name="md_theme_light_primaryContainer">@color/gray_medium</color>
+    <color name="md_theme_light_onPrimaryContainer">@color/white_off</color>
+    <color name="md_theme_light_secondary">@color/gray_light</color>
+    <color name="md_theme_light_onSecondary">@color/white_pure</color>
+    <color name="md_theme_light_secondaryContainer">@color/gray_lighter</color>
+    <color name="md_theme_light_onSecondaryContainer">@color/black_primary</color>
+    <color name="md_theme_light_tertiary">@color/gray_medium</color>
+    <color name="md_theme_light_onTertiary">@color/white_pure</color>
+    <color name="md_theme_light_tertiaryContainer">@color/gray_lightest</color>
+    <color name="md_theme_light_onTertiaryContainer">@color/black_primary</color>
+    <color name="md_theme_light_error">#BA1A1A</color>
+    <color name="md_theme_light_errorContainer">#FFDAD6</color>
+    <color name="md_theme_light_onError">@color/white_pure</color>
+    <color name="md_theme_light_onErrorContainer">#410002</color>
+    <color name="md_theme_light_background">@color/white_off</color>
+    <color name="md_theme_light_onBackground">@color/black_primary</color>
+    <color name="md_theme_light_surface">@color/white_pure</color>
+    <color name="md_theme_light_onSurface">@color/black_primary</color>
+    <color name="md_theme_light_surfaceVariant">@color/gray_lightest</color>
+    <color name="md_theme_light_onSurfaceVariant">@color/gray_medium</color>
+    <color name="md_theme_light_outline">@color/gray_light</color>
+    <color name="md_theme_light_inverseOnSurface">@color/white_off</color>
+    <color name="md_theme_light_inverseSurface">@color/gray_dark</color>
+    <color name="md_theme_light_inversePrimary">@color/gray_lightest</color>
+    
+    <!-- Dark Theme -->
+    <color name="md_theme_dark_primary">@color/white_off</color>
+    <color name="md_theme_dark_onPrimary">@color/black_primary</color>
+    <color name="md_theme_dark_primaryContainer">@color/gray_medium</color>
+    <color name="md_theme_dark_onPrimaryContainer">@color/gray_lightest</color>
+    <color name="md_theme_dark_secondary">@color/gray_lighter</color>
+    <color name="md_theme_dark_onSecondary">@color/gray_dark</color>
+    <color name="md_theme_dark_secondaryContainer">@color/gray_light</color>
+    <color name="md_theme_dark_onSecondaryContainer">@color/white_off</color>
+    <color name="md_theme_dark_tertiary">@color/gray_lightest</color>
+    <color name="md_theme_dark_onTertiary">@color/gray_dark</color>
+    <color name="md_theme_dark_tertiaryContainer">@color/gray_medium</color>
+    <color name="md_theme_dark_onTertiaryContainer">@color/white_off</color>
+    <color name="md_theme_dark_error">#FFB4AB</color>
+    <color name="md_theme_dark_errorContainer">#93000A</color>
+    <color name="md_theme_dark_onError">#690005</color>
+    <color name="md_theme_dark_onErrorContainer">#FFDAD6</color>
+    <color name="md_theme_dark_background">@color/black_primary</color>
+    <color name="md_theme_dark_onBackground">@color/white_off</color>
+    <color name="md_theme_dark_surface">@color/gray_dark</color>
+    <color name="md_theme_dark_onSurface">@color/white_off</color>
+    <color name="md_theme_dark_surfaceVariant">@color/gray_medium</color>
+    <color name="md_theme_dark_onSurfaceVariant">@color/gray_lightest</color>
+    <color name="md_theme_dark_outline">@color/gray_light</color>
+    <color name="md_theme_dark_inverseOnSurface">@color/gray_dark</color>
+    <color name="md_theme_dark_inverseSurface">@color/white_off</color>
+    <color name="md_theme_dark_inversePrimary">@color/gray_medium</color>
+    
+    <!-- Status Colors -->
+    <color name="success_color">#4CAF50</color>
+    <color name="warning_color">#FF9800</color>
+    <color name="info_color">#2196F3</color>
+    
+    <!-- Coffee Specific Accents (keeping some coffee essence) -->
+    <color name="coffee_accent">#8D6E63</color>
+    <color name="coffee_light">#D7CCC8</color>
+</resources>
