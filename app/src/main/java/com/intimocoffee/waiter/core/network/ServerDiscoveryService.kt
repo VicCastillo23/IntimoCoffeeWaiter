@@ -1,8 +1,7 @@
 package com.intimocoffee.waiter.core.network
 
 import android.util.Log
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
+import kotlinx.coroutines.*
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.logging.HttpLoggingInterceptor
@@ -30,75 +29,30 @@ class ServerDiscoveryService @Inject constructor() {
         .build()
     
     /**
-     * Discover the main IntimoCoffeeApp server automatically
-     * Returns the base URL if found, null otherwise
+     * Discover the main IntimoCoffeeApp server automatically.
+     * Scans the full local network range IN PARALLEL so the total time is bounded
+     * by a single timeout (~2 s) regardless of how many IPs don't respond.
      */
     suspend fun discoverMainServer(): String? {
         return withContext(Dispatchers.IO) {
-            try {
-                val localIp = getLocalIpAddress()
-                Log.i(TAG, "🔍 Starting server discovery. Local IP: $localIp")
-                
-                // PRIORITY 1: Test emulator host IP (MOST IMPORTANT FOR EMULATOR-TO-EMULATOR)
-                Log.d(TAG, "Testing emulator host IP: 10.0.2.2:$SERVER_PORT")
-                val emulatorHostUrl = testServer("10.0.2.2")
-                if (emulatorHostUrl != null) {
-                    Log.i(TAG, "✅ Server found at emulator host: $emulatorHostUrl")
-                    return@withContext emulatorHostUrl
+            val localIp = getLocalIpAddress()
+            val localIpRange = localIp?.substringBeforeLast(".") ?: "192.168.1"
+            Log.i(TAG, "🔍 Starting parallel server discovery. Local IP: $localIp, range: $localIpRange.x")
+
+            supervisorScope {
+                val deferreds = (1..254)
+                    .map { "$localIpRange.$it" }
+                    .filter { it != localIp }
+                    .map { ip -> async { testServer(ip) } }
+
+                val result = deferreds.awaitAll().firstOrNull { it != null }
+
+                if (result != null) {
+                    Log.i(TAG, "✅ Server found at: $result")
+                } else {
+                    Log.w(TAG, "❌ Server not found in $localIpRange.1-254")
                 }
-                
-                // PRIORITY 2: Test localhost (same device/emulator)
-                Log.d(TAG, "Testing localhost: 127.0.0.1:$SERVER_PORT")
-                val localhostUrl = testServer("127.0.0.1")
-                if (localhostUrl != null) {
-                    Log.i(TAG, "✅ Server found at localhost: $localhostUrl")
-                    return@withContext localhostUrl
-                }
-                
-                // PRIORITY 3: Test common Android IPs
-                val commonIPs = listOf(
-                    "10.0.2.15",    // Android emulator default guest IP
-                    "10.0.2.2",     // Android emulator host IP (again, it's that important)
-                    "192.168.1.100", // Original IP from config
-                    "192.168.1.1",   // Common router IP
-                    "192.168.0.1",   // Another common router IP
-                    "192.168.1.101",
-                    "192.168.0.100"
-                )
-                
-                for (testIp in commonIPs) {
-                    Log.d(TAG, "Testing common IP: $testIp:$SERVER_PORT")
-                    val serverUrl = testServer(testIp)
-                    if (serverUrl != null) {
-                        Log.i(TAG, "✅ Server found at common IP: $serverUrl")
-                        return@withContext serverUrl
-                    }
-                }
-                
-                // PRIORITY 4: If we have local IP, scan its network range
-                if (localIp != null && localIp != "127.0.0.1") {
-                    val baseIp = localIp.substringBeforeLast(".") + "."
-                    Log.d(TAG, "Scanning local network range: ${baseIp}x")
-                    
-                    // Test a small range around common IPs first
-                    val priorityRange = listOf(1, 100, 101, 102, 2, 10, 20, 50, 200, 254)
-                    for (i in priorityRange) {
-                        val testIp = "$baseIp$i"
-                        if (testIp == localIp) continue // Skip self
-                        
-                        val serverUrl = testServer(testIp)
-                        if (serverUrl != null) {
-                            Log.i(TAG, "✅ Server found in network scan: $serverUrl")
-                            return@withContext serverUrl
-                        }
-                    }
-                }
-                
-                Log.w(TAG, "❌ Server not found after comprehensive discovery")
-                null
-            } catch (e: Exception) {
-                Log.e(TAG, "❌ Error during server discovery", e)
-                null
+                result
             }
         }
     }
