@@ -11,6 +11,7 @@ import okhttp3.logging.HttpLoggingInterceptor
 import retrofit2.Retrofit
 import com.jakewharton.retrofit2.converter.kotlinx.serialization.asConverterFactory
 import java.util.concurrent.TimeUnit
+import javax.inject.Named
 import javax.inject.Singleton
 
 @Module
@@ -53,4 +54,22 @@ object NetworkModule {
     ): IntimoCoffeeApiService {
         return dynamicRetrofitProvider.getApiService()
     }
+
+    @Provides
+    @Singleton
+    @Named("aws")
+    fun provideAwsRetrofit(
+        okHttpClient: OkHttpClient,
+        json: Json
+    ): Retrofit = Retrofit.Builder()
+        .baseUrl("http://34.232.40.232:8080/")
+        .client(okHttpClient)
+        .addConverterFactory(json.asConverterFactory("application/json".toMediaType()))
+        .build()
+
+    @Provides
+    @Singleton
+    fun provideAwsLoyaltyApiService(
+        @Named("aws") retrofit: Retrofit
+    ): AwsLoyaltyApiService = retrofit.create(AwsLoyaltyApiService::class.java)
 }

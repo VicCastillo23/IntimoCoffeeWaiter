@@ -3,9 +3,8 @@ package com.intimocoffee.waiter.feature.fidelity.data.repository
 import android.util.Log
 import com.intimocoffee.waiter.core.database.dao.FidelityCustomerDao
 import com.intimocoffee.waiter.core.database.entity.FidelityCustomerEntity
-import com.intimocoffee.waiter.core.network.DynamicRetrofitProvider
-import com.intimocoffee.waiter.core.network.LoyaltyLinkOrderRequest
-import com.intimocoffee.waiter.core.network.LoyaltyLoginRequest
+import com.intimocoffee.waiter.core.network.AwsLinkOrderRequest
+import com.intimocoffee.waiter.core.network.AwsLoyaltyApiService
 import com.intimocoffee.waiter.feature.fidelity.domain.model.FidelityCustomer
 import com.intimocoffee.waiter.feature.fidelity.domain.repository.FidelityRepository
 import kotlinx.coroutines.flow.Flow
@@ -17,7 +16,7 @@ import javax.inject.Singleton
 @Singleton
 class FidelityRepositoryImpl @Inject constructor(
     private val dao: FidelityCustomerDao,
-    private val retrofitProvider: DynamicRetrofitProvider
+    private val awsApi: AwsLoyaltyApiService
 ) : FidelityRepository {
 
     companion object {
@@ -29,15 +28,13 @@ class FidelityRepositoryImpl @Inject constructor(
      * Cuando el servidor responde, actualiza/crea el registro local.
      */
     override suspend fun getByPhone(phone: String): FidelityCustomer? {
-        // 1. Intento en el servidor
+        // 1. Consulta directa a AWS
         try {
-            val response = retrofitProvider.getApiService()
-                .loyaltyLoginByPhone(LoyaltyLoginRequest(phone))
-            if (response.isSuccessful) {
-                val body = response.body()
-                if (body?.success == true && body.data != null) {
-                    val serverData = body.data
-                    Log.d(TAG, "Cliente encontrado en servidor: ${serverData.name} (id=${serverData.id})")
+            val response = awsApi.getCustomerByPhone(phone)
+            return when {
+                response.isSuccessful && response.body()?.data != null -> {
+                    val serverData = response.body()!!.data!!
+                    Log.d(TAG, "AWS: cliente encontrado → ${serverData.name} (id=${serverData.id}, pts=${serverData.totalPoints})")
                     // Actualizar caché local
                     val existing = dao.getByPhone(phone)
                     if (existing != null) {
@@ -53,24 +50,24 @@ class FidelityRepositoryImpl @Inject constructor(
                             totalPoints = serverData.totalPoints
                         ))
                     }
-                    return FidelityCustomer(
+                    FidelityCustomer(
                         id = serverData.id,
                         phone = serverData.phone,
                         name = serverData.name,
                         totalPoints = serverData.totalPoints
                     )
-                } else {
-                    Log.d(TAG, "Cliente no encontrado en servidor (phone=$phone)")
-                    return null // No está registrado
                 }
-            } else if (response.code() == 401 || response.code() == 404) {
-                // El servidor confirmó que no existe
-                Log.d(TAG, "Servidor: cliente no registrado (${response.code()})")
-                return null
+                response.code() == 404 -> {
+                    Log.d(TAG, "AWS: cliente no registrado (phone=$phone)")
+                    null
+                }
+                else -> {
+                    Log.w(TAG, "AWS: error ${response.code()}, fallback a caché local")
+                    dao.getByPhone(phone)?.toDomain()
+                }
             }
-            // Otro error HTTP → caer a local
         } catch (e: Exception) {
-            Log.w(TAG, "Servidor no disponible, usando caché local: ${e.message}")
+            Log.w(TAG, "AWS no disponible, usando caché local: ${e.message}")
         }
         // 2. Fallback: caché local
         return dao.getByPhone(phone)?.toDomain()
@@ -82,24 +79,23 @@ class FidelityRepositoryImpl @Inject constructor(
     override suspend fun addPoints(phone: String, orderTotal: BigDecimal, orderId: Long): FidelityCustomer {
         val pointsToAdd = FidelityRepository.calculatePoints(orderTotal)
 
-        // Vincular orden en servidor si corresponde
+        // Vincular orden en AWS si corresponde
         if (orderId > 0L) {
             try {
-                val loginResp = retrofitProvider.getApiService()
-                    .loyaltyLoginByPhone(LoyaltyLoginRequest(phone))
-                val serverCustomerId = loginResp.body()?.data?.id
+                val resp = awsApi.getCustomerByPhone(phone)
+                val serverCustomerId = resp.body()?.data?.id
                 if (serverCustomerId != null) {
-                    retrofitProvider.getApiService().loyaltyLinkOrder(
-                        LoyaltyLinkOrderRequest(
+                    awsApi.linkOrder(
+                        AwsLinkOrderRequest(
                             orderId = orderId,
                             customerId = serverCustomerId,
                             orderTotal = orderTotal.toDouble()
                         )
                     )
-                    Log.d(TAG, "Orden $orderId vinculada al cliente $serverCustomerId en servidor")
+                    Log.d(TAG, "AWS: orden $orderId vinculada al cliente $serverCustomerId")
                 }
             } catch (e: Exception) {
-                Log.w(TAG, "No se pudo vincular orden en servidor: ${e.message}")
+                Log.w(TAG, "AWS: no se pudo vincular orden: ${e.message}")
             }
         }
 

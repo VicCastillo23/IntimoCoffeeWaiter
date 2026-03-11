@@ -40,6 +40,7 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.compose.runtime.collectAsState
 import com.intimocoffee.waiter.feature.fidelity.domain.model.FidelityCustomer
 import com.intimocoffee.waiter.feature.orders.domain.model.CartItem
+import com.intimocoffee.waiter.feature.orders.presentation.components.ProductModifierSheet
 import com.intimocoffee.waiter.feature.orders.presentation.components.StockWarningsDialog
 import com.intimocoffee.waiter.feature.products.domain.model.Category
 import com.intimocoffee.waiter.feature.products.domain.model.Product
@@ -226,7 +227,8 @@ fun CreateOrderScreen(
                 items(uiState.filteredProducts) { product ->
                     ProductCard(
                         product = product,
-                        onClick = { viewModel.addProductToCart(product) }
+                        onModify = { viewModel.openModifiers(product) },
+                        onQuickAdd = { viewModel.addProductToCart(product) }
                     )
                 }
             }
@@ -249,6 +251,15 @@ fun CreateOrderScreen(
             stockReport = uiState.stockAvailabilityReport!!,
             onProceedAnyway = viewModel::proceedWithWarnings,
             onDismiss = viewModel::hideStockWarnings
+        )
+    }
+
+    // Sheet de modificadores
+    uiState.productForModifiers?.let { product ->
+        ProductModifierSheet(
+            product = product,
+            onAdd = { modifiers, note -> viewModel.addProductWithModifiers(product, modifiers, note) },
+            onDismiss = viewModel::closeModifiers
         )
     }
 }
@@ -504,8 +515,14 @@ private fun CategoryPill(label: String, color: Color, selected: Boolean, onClick
 }
 
 // ─── Tarjeta de producto ──────────────────────────────────────────────────────
+// onModify → abre sheet de modificadores (tap en el cuerpo de la card)
+// onQuickAdd → agrega directo sin modificadores (botón +)
 @Composable
-private fun ProductCard(product: Product, onClick: () -> Unit) {
+private fun ProductCard(
+    product: Product,
+    onModify: () -> Unit,
+    onQuickAdd: () -> Unit
+) {
     val fmt = NumberFormat.getCurrencyInstance(Locale("es", "CO"))
     val isOut = product.stockQuantity?.let { it == 0 } ?: false
     val color = catColor(product.categoryId)
@@ -514,7 +531,7 @@ private fun ProductCard(product: Product, onClick: () -> Unit) {
         modifier = Modifier
             .fillMaxWidth()
             .aspectRatio(0.80f)
-            .clickable(enabled = !isOut) { onClick() },
+            .clickable(enabled = !isOut) { onModify() },
         shape = RoundedCornerShape(10.dp),
         elevation = CardDefaults.cardElevation(if (isOut) 0.dp else 2.dp),
         colors = CardDefaults.cardColors(
@@ -567,6 +584,7 @@ private fun ProductCard(product: Product, onClick: () -> Unit) {
                             color = color
                         )
                         Surface(
+                            onClick = onQuickAdd,
                             shape = RoundedCornerShape(6.dp),
                             color = color.copy(0.12f)
                         ) {
@@ -731,14 +749,24 @@ private fun CartItemRow(
                 .clip(RoundedCornerShape(2.dp))
                 .background(color)
         )
-        Text(
-            item.product.name,
-            modifier = Modifier.weight(1f),
-            style = MaterialTheme.typography.bodySmall,
-            fontWeight = FontWeight.Medium,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis
-        )
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                item.product.name,
+                style = MaterialTheme.typography.bodySmall,
+                fontWeight = FontWeight.Medium,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+            if (item.notes != null) {
+                Text(
+                    item.notes,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = color.copy(0.75f),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+        }
         // Controles +/-
         Row(verticalAlignment = Alignment.CenterVertically) {
             IconButton(

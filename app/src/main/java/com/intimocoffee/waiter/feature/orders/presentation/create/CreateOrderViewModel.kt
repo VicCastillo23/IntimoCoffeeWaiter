@@ -55,7 +55,9 @@ data class CreateOrderUiState(
     val customerPhone: String = "",
     val customerName: String = "",
     val fidelityCustomer: FidelityCustomer? = null,
-    val isFidelityLoading: Boolean = false
+    val isFidelityLoading: Boolean = false,
+    // Modificadores
+    val productForModifiers: Product? = null
 ) {
     val taxRate = BigDecimal("0.10") // 10% tax
     
@@ -182,13 +184,52 @@ class CreateOrderViewModel @Inject constructor(
         _uiState.value = _uiState.value.copy(customerName = name)
     }
 
+    /** Abre el sheet de modificadores para el producto seleccionado. */
+    fun openModifiers(product: Product) {
+        _uiState.value = _uiState.value.copy(productForModifiers = product)
+    }
+
+    /** Cierra el sheet de modificadores sin agregar nada. */
+    fun closeModifiers() {
+        _uiState.value = _uiState.value.copy(productForModifiers = null)
+    }
+
+    /** Agrega el producto con los modificadores seleccionados al carrito.
+     *  Si ya existe un CartItem con el mismo producto Y las mismas notas, incrementa cantidad.
+     *  Si las notas son distintas, agrega como línea separada. */
+    fun addProductWithModifiers(product: Product, selectedModifiers: List<String>, customNote: String) {
+        val notes = buildString {
+            if (selectedModifiers.isNotEmpty()) append(selectedModifiers.joinToString(", "))
+            if (customNote.isNotBlank()) {
+                if (selectedModifiers.isNotEmpty()) append(" — ")
+                append(customNote.trim())
+            }
+        }.takeIf { it.isNotBlank() }
+
+        val currentState = _uiState.value
+        val existingItem = currentState.cartItems.find {
+            it.product.id == product.id && it.notes == notes
+        }
+        val updatedCart = if (existingItem != null) {
+            currentState.cartItems.map { cartItem ->
+                if (cartItem.product.id == product.id && cartItem.notes == notes)
+                    cartItem.withQuantity(cartItem.quantity + 1)
+                else cartItem
+            }
+        } else {
+            currentState.cartItems + CartItem(product = product, quantity = 1, notes = notes)
+        }
+        _uiState.value = currentState.copy(cartItems = updatedCart, productForModifiers = null)
+    }
+
+    /** Agrega directamente sin modificadores (botón + rápido). */
     fun addProductToCart(product: Product) {
         val currentState = _uiState.value
-        val existingItem = currentState.cartItems.find { it.product.id == product.id }
+        val existingItem = currentState.cartItems.find { it.product.id == product.id && it.notes == null }
         
         val updatedCart = if (existingItem != null) {
             currentState.cartItems.map { cartItem ->
-                if (cartItem.product.id == product.id) {
+                if (cartItem.product.id == product.id && cartItem.notes == null) {
                     cartItem.withQuantity(cartItem.quantity + 1)
                 } else {
                     cartItem
