@@ -1,8 +1,12 @@
 package com.intimocoffee.waiter.feature.orders.presentation.create
 
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.animateContentSize
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -14,6 +18,7 @@ import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
@@ -23,7 +28,10 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.ExperimentalComposeUiApi
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -58,7 +66,7 @@ private fun parseHexColor(hex: String): Color = try {
 } catch (_: Exception) { defaultCatColor }
 
 // ─── Pantalla principal ──────────────────────────────────────────────────────
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalComposeUiApi::class)
 @Composable
 fun CreateOrderScreen(
     onNavigateBack: () -> Unit,
@@ -66,6 +74,7 @@ fun CreateOrderScreen(
     viewModel: CreateOrderViewModel = hiltViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsState()
+    val keyboardController = LocalSoftwareKeyboardController.current
 
     LaunchedEffect(uiState.orderCreated) {
         if (uiState.orderCreated) onNavigateBack()
@@ -76,7 +85,7 @@ fun CreateOrderScreen(
             .fillMaxSize()
             .background(MaterialTheme.colorScheme.background)
     ) {
-        // TopAppBar
+        // 1. TopAppBar
         TopAppBar(
             title = {
                 Column {
@@ -85,7 +94,7 @@ fun CreateOrderScreen(
                         Text(
                             "Mesa ${t.displayName} seleccionada",
                             style = MaterialTheme.typography.labelMedium,
-                            color = MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.85f)
+                            color = MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.80f)
                         )
                     }
                 }
@@ -98,11 +107,13 @@ fun CreateOrderScreen(
             actions = {
                 if (uiState.isLoading || uiState.isValidatingStock) {
                     CircularProgressIndicator(
-                        modifier = Modifier.size(22.dp),
+                        modifier = Modifier
+                            .size(22.dp)
+                            .padding(end = 2.dp),
                         color = MaterialTheme.colorScheme.onPrimary,
                         strokeWidth = 2.dp
                     )
-                    Spacer(Modifier.width(12.dp))
+                    Spacer(Modifier.width(10.dp))
                 }
             },
             colors = TopAppBarDefaults.topAppBarColors(
@@ -112,9 +123,12 @@ fun CreateOrderScreen(
             )
         )
 
-        // Error banner
+        // 2. Error banner
         uiState.error?.let { msg ->
-            Surface(color = MaterialTheme.colorScheme.errorContainer, modifier = Modifier.fillMaxWidth()) {
+            Surface(
+                color = MaterialTheme.colorScheme.errorContainer,
+                modifier = Modifier.fillMaxWidth()
+            ) {
                 Text(
                     msg,
                     modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp),
@@ -124,54 +138,109 @@ fun CreateOrderScreen(
             }
         }
 
-        // Fila de mesas
+        // 3. Selector de mesa
         TableChipsRow(
             tables = uiState.availableTables,
             selectedTable = uiState.selectedTable,
             onSelect = viewModel::selectTable
         )
 
-        // Contenido principal
+        // 4. Número de cliente + Buscar
+        PhoneSearchRow(
+            phone = uiState.customerPhone,
+            isLoading = uiState.isFidelityLoading,
+            onPhoneChange = viewModel::updatePhone,
+            onSearch = {
+                keyboardController?.hide()
+                viewModel.triggerFidelitySearch()
+            }
+        )
+
+        // 5. Card de fidelidad (animada)
+        AnimatedVisibility(
+            visible = uiState.customerPhone.length >= 7 && !uiState.isFidelityLoading,
+            enter = expandVertically(animationSpec = tween(220)) + fadeIn(tween(220)),
+            exit = shrinkVertically(animationSpec = tween(180)) + fadeOut(tween(180))
+        ) {
+            FidelityInfoCard(
+                fidelityCustomer = uiState.fidelityCustomer,
+                pointsToEarn = uiState.fidelityPointsToEarn,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 12.dp, vertical = 4.dp)
+            )
+        }
+
+        // 6. Chips de categorías
+        CategoryChipsRow(
+            categories = uiState.categories,
+            selectedCategoryId = uiState.selectedCategoryId,
+            onSelect = viewModel::selectCategory
+        )
+
+        Divider(color = MaterialTheme.colorScheme.outlineVariant)
+
+        // 7. Grid de productos (toma el espacio restante)
         if (uiState.isLoading && uiState.products.isEmpty()) {
-            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+            Box(
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxWidth(),
+                contentAlignment = Alignment.Center
+            ) {
                 CircularProgressIndicator()
             }
+        } else if (uiState.filteredProducts.isEmpty()) {
+            Box(
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxWidth(),
+                contentAlignment = Alignment.Center
+            ) {
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Icon(
+                        Icons.Default.SearchOff, null,
+                        Modifier.size(40.dp),
+                        tint = MaterialTheme.colorScheme.onSurface.copy(0.20f)
+                    )
+                    Text(
+                        "Sin productos en esta categoría",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurface.copy(0.35f)
+                    )
+                }
+            }
         } else {
-            Row(modifier = Modifier.fillMaxSize()) {
-                // Izquierda: Productos
-                ProductPanel(
-                    categories = uiState.categories,
-                    selectedCategoryId = uiState.selectedCategoryId,
-                    products = uiState.filteredProducts,
-                    onCategorySelect = viewModel::selectCategory,
-                    onProductClick = viewModel::addProductToCart,
-                    modifier = Modifier.weight(0.58f).fillMaxHeight()
-                )
-
-                Box(
-                    modifier = Modifier
-                        .width(1.dp)
-                        .fillMaxHeight()
-                        .background(MaterialTheme.colorScheme.outlineVariant)
-                )
-
-                // Derecha: Carrito
-                CartPanel(
-                    cartItems = uiState.cartItems,
-                    total = uiState.calculatedTotal,
-                    customerPhone = uiState.customerPhone,
-                    fidelityCustomer = uiState.fidelityCustomer,
-                    fidelityPointsToEarn = uiState.fidelityPointsToEarn,
-                    isFidelityLoading = uiState.isFidelityLoading,
-                    onPhoneChange = viewModel::updatePhone,
-                    onUpdateQuantity = viewModel::updateCartItemQuantity,
-                    onRemoveItem = viewModel::removeCartItem,
-                    onCreateOrder = viewModel::createOrder,
-                    isCreateOrderEnabled = uiState.selectedTable != null && uiState.cartItems.isNotEmpty(),
-                    modifier = Modifier.weight(0.42f).fillMaxHeight()
-                )
+            LazyVerticalGrid(
+                columns = GridCells.Adaptive(minSize = 110.dp),
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxWidth(),
+                contentPadding = PaddingValues(8.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                items(uiState.filteredProducts) { product ->
+                    ProductCard(
+                        product = product,
+                        onClick = { viewModel.addProductToCart(product) }
+                    )
+                }
             }
         }
+
+        // 8. Panel "Resumen de Orden" (parte inferior fija)
+        CartSummaryPanel(
+            cartItems = uiState.cartItems,
+            total = uiState.calculatedTotal,
+            isCreateEnabled = uiState.selectedTable != null && uiState.cartItems.isNotEmpty(),
+            onUpdateQuantity = viewModel::updateCartItemQuantity,
+            onRemoveItem = viewModel::removeCartItem,
+            onCreateOrder = viewModel::createOrder
+        )
     }
 
     // Diálogo de stock insuficiente
@@ -184,7 +253,7 @@ fun CreateOrderScreen(
     }
 }
 
-// ─── Fila compacta de mesas ──────────────────────────────────────────────────
+// ─── Fila de mesas ───────────────────────────────────────────────────────────
 @Composable
 private fun TableChipsRow(
     tables: List<Table>,
@@ -194,29 +263,34 @@ private fun TableChipsRow(
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.06f))
+            .background(MaterialTheme.colorScheme.surface)
             .padding(horizontal = 12.dp, vertical = 6.dp)
     ) {
         Row(
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(6.dp)
+            horizontalArrangement = Arrangement.spacedBy(4.dp)
         ) {
             Icon(
                 Icons.Default.TableRestaurant, null,
-                modifier = Modifier.size(15.dp),
+                modifier = Modifier.size(14.dp),
                 tint = MaterialTheme.colorScheme.primary
             )
             Text(
                 text = if (selectedTable != null) "Mesa ${selectedTable.displayName} ✓"
-                       else "Seleccionar mesa",
-                style = MaterialTheme.typography.labelMedium,
+                       else "Seleccionar mesa:",
+                style = MaterialTheme.typography.labelSmall,
                 fontWeight = FontWeight.SemiBold,
                 color = MaterialTheme.colorScheme.primary
             )
+            Icon(
+                Icons.Default.ChevronRight, null,
+                Modifier.size(14.dp),
+                tint = MaterialTheme.colorScheme.primary.copy(0.45f)
+            )
         }
-        Spacer(Modifier.height(6.dp))
+        Spacer(Modifier.height(5.dp))
         LazyRow(
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
             contentPadding = PaddingValues(horizontal = 2.dp)
         ) {
             items(tables) { table ->
@@ -228,20 +302,22 @@ private fun TableChipsRow(
                 }
                 Surface(
                     onClick = { onSelect(table) },
-                    modifier = Modifier.size(44.dp),
-                    shape = RoundedCornerShape(10.dp),
-                    color = if (isSelected) tColor.copy(alpha = 0.18f) else MaterialTheme.colorScheme.surface,
+                    modifier = Modifier.size(40.dp),
+                    shape = RoundedCornerShape(8.dp),
+                    color = if (isSelected) tColor.copy(alpha = 0.18f)
+                            else MaterialTheme.colorScheme.surfaceVariant,
                     border = BorderStroke(
                         if (isSelected) 2.dp else 1.dp,
-                        tColor.copy(if (isSelected) 1f else 0.35f)
+                        tColor.copy(if (isSelected) 1f else 0.28f)
                     )
                 ) {
                     Box(contentAlignment = Alignment.Center) {
                         Text(
                             table.number.toString(),
-                            style = MaterialTheme.typography.titleSmall,
-                            fontWeight = if (isSelected) FontWeight.ExtraBold else FontWeight.Normal,
-                            color = tColor
+                            style = MaterialTheme.typography.labelMedium,
+                            fontWeight = if (isSelected) FontWeight.ExtraBold else FontWeight.Medium,
+                            color = if (isSelected) tColor
+                                    else MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
                 }
@@ -250,66 +326,160 @@ private fun TableChipsRow(
     }
 }
 
-// ─── Panel izquierdo: categorías + productos ─────────────────────────────────
+// ─── Fila teléfono + Buscar ──────────────────────────────────────────────────
 @Composable
-private fun ProductPanel(
-    categories: List<Category>,
-    selectedCategoryId: Long?,
-    products: List<Product>,
-    onCategorySelect: (Long?) -> Unit,
-    onProductClick: (Product) -> Unit,
+private fun PhoneSearchRow(
+    phone: String,
+    isLoading: Boolean,
+    onPhoneChange: (String) -> Unit,
+    onSearch: () -> Unit
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(MaterialTheme.colorScheme.surface)
+            .padding(horizontal = 12.dp, vertical = 6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        OutlinedTextField(
+            value = phone,
+            onValueChange = onPhoneChange,
+            label = { Text("Número Cliente") },
+            leadingIcon = {
+                Icon(
+                    Icons.Default.Phone, null,
+                    Modifier.size(18.dp),
+                    tint = MaterialTheme.colorScheme.primary
+                )
+            },
+            trailingIcon = {
+                if (isLoading) {
+                    CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
+                }
+            },
+            keyboardOptions = KeyboardOptions(
+                keyboardType = KeyboardType.Phone,
+                imeAction = ImeAction.Search
+            ),
+            keyboardActions = KeyboardActions(onSearch = { onSearch() }),
+            singleLine = true,
+            modifier = Modifier.weight(1f),
+            textStyle = MaterialTheme.typography.bodyMedium,
+            shape = RoundedCornerShape(10.dp)
+        )
+        Button(
+            onClick = onSearch,
+            shape = RoundedCornerShape(10.dp),
+            modifier = Modifier.height(52.dp),
+            contentPadding = PaddingValues(horizontal = 14.dp)
+        ) {
+            Icon(Icons.Default.Search, null, Modifier.size(18.dp))
+            Spacer(Modifier.width(4.dp))
+            Text("Buscar", style = MaterialTheme.typography.labelLarge)
+        }
+    }
+}
+
+// ─── Card de fidelidad ────────────────────────────────────────────────────────
+@Composable
+private fun FidelityInfoCard(
+    fidelityCustomer: FidelityCustomer?,
+    pointsToEarn: Int,
     modifier: Modifier = Modifier
 ) {
-    Column(modifier = modifier) {
-        // Barra de categorías
-        LazyRow(
+    Card(
+        modifier = modifier,
+        shape = RoundedCornerShape(10.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = if (fidelityCustomer != null)
+                MaterialTheme.colorScheme.primary.copy(0.10f)
+            else
+                MaterialTheme.colorScheme.secondaryContainer.copy(0.50f)
+        )
+    ) {
+        Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .background(MaterialTheme.colorScheme.surface)
-                .padding(horizontal = 10.dp, vertical = 8.dp),
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                .padding(horizontal = 12.dp, vertical = 8.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
         ) {
-            item {
-                CategoryPill(
-                    label = "🍽️  Todo",
-                    color = MaterialTheme.colorScheme.primary,
-                    selected = selectedCategoryId == null,
-                    onClick = { onCategorySelect(null) }
-                )
-            }
-            items(categories) { cat ->
-                CategoryPill(
-                    label = "${cat.icon ?: ""}  ${cat.name}",
-                    color = parseHexColor(cat.color),
-                    selected = selectedCategoryId == cat.id,
-                    onClick = { onCategorySelect(cat.id) }
-                )
-            }
-        }
-
-        Divider(color = MaterialTheme.colorScheme.outlineVariant)
-
-        // Grid de productos
-        if (products.isEmpty()) {
-            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                Text(
-                    "Sin productos",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.35f)
-                )
-            }
-        } else {
-            LazyVerticalGrid(
-                columns = GridCells.Adaptive(minSize = 118.dp),
-                modifier = Modifier.fillMaxSize(),
-                contentPadding = PaddingValues(8.dp),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp)
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                items(products) { product ->
-                    ProductCard(product = product, onClick = { onProductClick(product) })
+                Icon(
+                    if (fidelityCustomer != null) Icons.Default.Star else Icons.Default.PersonAdd,
+                    null,
+                    Modifier.size(18.dp),
+                    tint = if (fidelityCustomer != null) MaterialTheme.colorScheme.primary
+                           else MaterialTheme.colorScheme.secondary
+                )
+                Column {
+                    Text(
+                        fidelityCustomer?.displayName ?: "Cliente nuevo",
+                        style = MaterialTheme.typography.bodySmall,
+                        fontWeight = FontWeight.SemiBold,
+                        color = if (fidelityCustomer != null) MaterialTheme.colorScheme.primary
+                                else MaterialTheme.colorScheme.secondary
+                    )
+                    if (fidelityCustomer != null) {
+                        Text(
+                            "${fidelityCustomer.totalPoints} pts acumulados",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurface.copy(0.55f)
+                        )
+                    }
                 }
             }
+            if (pointsToEarn > 0) {
+                Surface(
+                    shape = RoundedCornerShape(12.dp),
+                    color = MaterialTheme.colorScheme.primary
+                ) {
+                    Text(
+                        "+$pointsToEarn pts",
+                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onPrimary,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+            }
+        }
+    }
+}
+
+// ─── Chips de categorías ──────────────────────────────────────────────────────
+@Composable
+private fun CategoryChipsRow(
+    categories: List<Category>,
+    selectedCategoryId: Long?,
+    onSelect: (Long?) -> Unit
+) {
+    LazyRow(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(MaterialTheme.colorScheme.surface)
+            .padding(horizontal = 10.dp, vertical = 8.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        item {
+            CategoryPill(
+                label = "🍽️  Todo",
+                color = MaterialTheme.colorScheme.primary,
+                selected = selectedCategoryId == null,
+                onClick = { onSelect(null) }
+            )
+        }
+        items(categories) { cat ->
+            CategoryPill(
+                label = "${cat.icon ?: ""}  ${cat.name}",
+                color = parseHexColor(cat.color),
+                selected = selectedCategoryId == cat.id,
+                onClick = { onSelect(cat.id) }
+            )
         }
     }
 }
@@ -343,72 +513,68 @@ private fun ProductCard(product: Product, onClick: () -> Unit) {
     Card(
         modifier = Modifier
             .fillMaxWidth()
-            .aspectRatio(0.82f)
+            .aspectRatio(0.80f)
             .clickable(enabled = !isOut) { onClick() },
-        shape = RoundedCornerShape(12.dp),
-        elevation = CardDefaults.cardElevation(if (isOut) 0.dp else 3.dp),
+        shape = RoundedCornerShape(10.dp),
+        elevation = CardDefaults.cardElevation(if (isOut) 0.dp else 2.dp),
         colors = CardDefaults.cardColors(
-            containerColor = if (isOut) MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f)
-                            else color.copy(alpha = 0.07f)
+            containerColor = if (isOut) MaterialTheme.colorScheme.surfaceVariant.copy(0.6f)
+                            else MaterialTheme.colorScheme.surface
         )
     ) {
         Column(Modifier.fillMaxSize()) {
-            // Barra de color
+            // Barra de color en top
             Box(
                 Modifier
                     .fillMaxWidth()
                     .height(5.dp)
-                    .background(if (isOut) MaterialTheme.colorScheme.outline.copy(0.2f) else color.copy(0.75f))
+                    .background(
+                        if (isOut) MaterialTheme.colorScheme.outline.copy(0.18f) else color
+                    )
             )
             Column(
                 modifier = Modifier
                     .fillMaxSize()
-                    .padding(horizontal = 10.dp, vertical = 8.dp),
+                    .padding(horizontal = 8.dp, vertical = 7.dp),
                 verticalArrangement = Arrangement.SpaceBetween
             ) {
                 Text(
                     text = product.name,
-                    style = MaterialTheme.typography.titleSmall,
+                    style = MaterialTheme.typography.bodySmall,
                     fontWeight = FontWeight.SemiBold,
                     maxLines = 3,
                     overflow = TextOverflow.Ellipsis,
                     color = if (isOut) MaterialTheme.colorScheme.onSurface.copy(0.35f)
                             else MaterialTheme.colorScheme.onSurface
                 )
-                Spacer(Modifier.weight(1f))
-                Row(
-                    Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.Bottom
-                ) {
-                    if (isOut) {
-                        Surface(
-                            shape = RoundedCornerShape(6.dp),
-                            color = MaterialTheme.colorScheme.error.copy(0.12f)
-                        ) {
-                            Text(
-                                "Agotado",
-                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.error,
-                                fontWeight = FontWeight.SemiBold
-                            )
-                        }
-                    } else {
+                if (isOut) {
+                    Text(
+                        "Agotado",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.error.copy(0.65f),
+                        fontWeight = FontWeight.Medium
+                    )
+                } else {
+                    Row(
+                        Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
                         Text(
                             fmt.format(product.price),
-                            style = MaterialTheme.typography.titleSmall,
-                            fontWeight = FontWeight.ExtraBold,
+                            style = MaterialTheme.typography.labelMedium,
+                            fontWeight = FontWeight.Bold,
                             color = color
                         )
                         Surface(
-                            shape = RoundedCornerShape(8.dp),
-                            color = color.copy(alpha = 0.15f)
+                            shape = RoundedCornerShape(6.dp),
+                            color = color.copy(0.12f)
                         ) {
                             Icon(
-                                Icons.Default.Add,
-                                contentDescription = "Agregar",
-                                modifier = Modifier.size(26.dp).padding(4.dp),
+                                Icons.Default.Add, null,
+                                modifier = Modifier
+                                    .size(22.dp)
+                                    .padding(4.dp),
                                 tint = color
                             )
                         }
@@ -419,183 +585,123 @@ private fun ProductCard(product: Product, onClick: () -> Unit) {
     }
 }
 
-// ─── Panel derecho: carrito ───────────────────────────────────────────────────
+// ─── Panel "Resumen de Orden" (parte inferior) ────────────────────────────────
 @Composable
-private fun CartPanel(
+private fun CartSummaryPanel(
     cartItems: List<CartItem>,
     total: BigDecimal,
-    customerPhone: String,
-    fidelityCustomer: FidelityCustomer?,
-    fidelityPointsToEarn: Int,
-    isFidelityLoading: Boolean,
-    onPhoneChange: (String) -> Unit,
+    isCreateEnabled: Boolean,
     onUpdateQuantity: (Long, Int) -> Unit,
     onRemoveItem: (Long) -> Unit,
-    onCreateOrder: () -> Unit,
-    isCreateOrderEnabled: Boolean,
-    modifier: Modifier = Modifier
+    onCreateOrder: () -> Unit
 ) {
     val fmt = NumberFormat.getCurrencyInstance(Locale("es", "CO"))
+    val hasItems = cartItems.isNotEmpty()
+    val totalQty = cartItems.sumOf { it.quantity }
 
-    Column(
-        modifier = modifier
-            .background(MaterialTheme.colorScheme.surface)
-            .padding(horizontal = 12.dp, vertical = 10.dp)
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        color = MaterialTheme.colorScheme.surface,
+        shadowElevation = 10.dp,
+        tonalElevation = 2.dp
     ) {
-        // Campo teléfono
-        OutlinedTextField(
-            value = customerPhone,
-            onValueChange = onPhoneChange,
-            label = { Text("Teléfono") },
-            leadingIcon = {
-                Icon(Icons.Default.Phone, null, Modifier.size(18.dp), tint = MaterialTheme.colorScheme.primary)
-            },
-            trailingIcon = {
-                if (isFidelityLoading) CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp)
-            },
-            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
-            singleLine = true,
-            modifier = Modifier.fillMaxWidth(),
-            textStyle = MaterialTheme.typography.bodyMedium,
-            shape = RoundedCornerShape(10.dp)
-        )
-
-        // Card de fidelidad
-        AnimatedVisibility(
-            visible = customerPhone.length >= 7 && !isFidelityLoading,
-            enter = fadeIn(),
-            exit = fadeOut()
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .animateContentSize(animationSpec = tween(250))
         ) {
-            Card(
-                modifier = Modifier.fillMaxWidth().padding(top = 6.dp),
-                shape = RoundedCornerShape(10.dp),
-                colors = CardDefaults.cardColors(
-                    containerColor = if (fidelityCustomer != null)
-                        MaterialTheme.colorScheme.primary.copy(0.10f)
-                    else
-                        MaterialTheme.colorScheme.secondaryContainer.copy(0.45f)
-                )
+            // Header
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 14.dp, vertical = 10.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
             ) {
                 Row(
-                    modifier = Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 8.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(6.dp)
-                    ) {
-                        Icon(
-                            if (fidelityCustomer != null) Icons.Default.Star else Icons.Default.PersonAdd,
-                            null,
-                            Modifier.size(16.dp),
-                            tint = if (fidelityCustomer != null) MaterialTheme.colorScheme.primary
-                                   else MaterialTheme.colorScheme.secondary
-                        )
-                        Column {
+                    Icon(
+                        Icons.Default.Receipt, null,
+                        Modifier.size(18.dp),
+                        tint = if (hasItems) MaterialTheme.colorScheme.primary
+                               else MaterialTheme.colorScheme.onSurface.copy(0.35f)
+                    )
+                    Text(
+                        "Resumen de Orden",
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.Bold,
+                        color = if (hasItems) MaterialTheme.colorScheme.onSurface
+                                else MaterialTheme.colorScheme.onSurface.copy(0.45f)
+                    )
+                    if (hasItems) {
+                        Surface(
+                            shape = RoundedCornerShape(10.dp),
+                            color = MaterialTheme.colorScheme.primary
+                        ) {
                             Text(
-                                fidelityCustomer?.displayName ?: "Cliente nuevo",
-                                style = MaterialTheme.typography.bodySmall,
-                                fontWeight = FontWeight.SemiBold,
-                                color = if (fidelityCustomer != null) MaterialTheme.colorScheme.primary
-                                        else MaterialTheme.colorScheme.secondary
-                            )
-                            if (fidelityCustomer != null) {
-                                Text(
-                                    "${fidelityCustomer.totalPoints} pts acumulados",
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = MaterialTheme.colorScheme.onSurface.copy(0.55f)
-                                )
-                            }
-                        }
-                    }
-                    if (fidelityPointsToEarn > 0) {
-                        Surface(shape = RoundedCornerShape(12.dp), color = MaterialTheme.colorScheme.primary) {
-                            Text(
-                                "+$fidelityPointsToEarn pts",
-                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
-                                style = MaterialTheme.typography.labelMedium,
+                                "$totalQty",
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp),
+                                style = MaterialTheme.typography.labelSmall,
                                 color = MaterialTheme.colorScheme.onPrimary,
                                 fontWeight = FontWeight.Bold
                             )
                         }
                     }
                 }
-            }
-        }
-
-        Divider(modifier = Modifier.padding(vertical = 8.dp))
-
-        // Items
-        if (cartItems.isEmpty()) {
-            Box(
-                modifier = Modifier.weight(1f).fillMaxWidth(),
-                contentAlignment = Alignment.Center
-            ) {
-                Column(
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    Icon(
-                        Icons.Default.ShoppingCart, null,
-                        Modifier.size(44.dp),
-                        tint = MaterialTheme.colorScheme.onSurface.copy(0.18f)
-                    )
+                if (hasItems) {
                     Text(
-                        "Toca un producto\npara agregar",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurface.copy(0.38f),
-                        textAlign = TextAlign.Center
+                        fmt.format(total),
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.ExtraBold,
+                        color = MaterialTheme.colorScheme.primary
                     )
                 }
             }
-        } else {
-            LazyColumn(
-                modifier = Modifier.weight(1f),
-                verticalArrangement = Arrangement.spacedBy(1.dp)
-            ) {
-                items(cartItems) { item ->
-                    CartItemRow(item = item, onUpdateQuantity = onUpdateQuantity, onRemove = onRemoveItem)
-                    Divider(color = MaterialTheme.colorScheme.outlineVariant.copy(0.4f))
+
+            // Lista de items (solo cuando hay productos)
+            if (hasItems) {
+                Divider(color = MaterialTheme.colorScheme.outlineVariant.copy(0.4f))
+                LazyColumn(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(max = 180.dp),
+                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp),
+                    verticalArrangement = Arrangement.spacedBy(2.dp)
+                ) {
+                    items(cartItems) { item ->
+                        CartItemRow(
+                            item = item,
+                            onUpdateQuantity = onUpdateQuantity,
+                            onRemove = onRemoveItem
+                        )
+                    }
                 }
+                Divider(color = MaterialTheme.colorScheme.outlineVariant.copy(0.4f))
             }
-        }
 
-        // Total + botón
-        Divider(modifier = Modifier.padding(top = 8.dp))
-        Row(
-            modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Column {
-                Text("Total", style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurface.copy(0.55f))
+            // Botón Generar Orden
+            Button(
+                onClick = onCreateOrder,
+                enabled = isCreateEnabled,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 12.dp, vertical = 8.dp)
+                    .height(52.dp),
+                shape = RoundedCornerShape(12.dp),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = MaterialTheme.colorScheme.primary
+                )
+            ) {
+                Icon(Icons.Default.CheckCircle, null, Modifier.size(20.dp))
+                Spacer(Modifier.width(8.dp))
                 Text(
-                    fmt.format(total),
-                    style = MaterialTheme.typography.headlineSmall,
-                    fontWeight = FontWeight.ExtraBold,
-                    color = MaterialTheme.colorScheme.primary
+                    "Generar Orden",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold
                 )
             }
-            if (cartItems.isNotEmpty()) {
-                Text(
-                    "${cartItems.sumOf { it.quantity }} items",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurface.copy(0.5f)
-                )
-            }
-        }
-
-        Button(
-            onClick = onCreateOrder,
-            enabled = isCreateOrderEnabled,
-            modifier = Modifier.fillMaxWidth().height(52.dp),
-            shape = RoundedCornerShape(12.dp)
-        ) {
-            Icon(Icons.Default.CheckCircle, null, Modifier.size(22.dp))
-            Spacer(Modifier.width(8.dp))
-            Text("Crear Orden", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
         }
     }
 }
@@ -611,49 +717,48 @@ private fun CartItemRow(
     val color = catColor(item.product.categoryId)
 
     Row(
-        modifier = Modifier.fillMaxWidth().padding(vertical = 5.dp),
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 4.dp),
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(4.dp)
+        horizontalArrangement = Arrangement.spacedBy(6.dp)
     ) {
         // Barra lateral de color
         Box(
             modifier = Modifier
                 .width(3.dp)
-                .height(34.dp)
+                .height(26.dp)
                 .clip(RoundedCornerShape(2.dp))
-                .background(color.copy(alpha = 0.7f))
+                .background(color)
         )
-
-        Column(modifier = Modifier.weight(1f)) {
-            Text(
-                item.product.name,
-                style = MaterialTheme.typography.bodySmall,
-                fontWeight = FontWeight.SemiBold,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
-            )
-            Text(
-                fmt.format(item.unitPrice),
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurface.copy(0.5f)
-            )
-        }
-
+        Text(
+            item.product.name,
+            modifier = Modifier.weight(1f),
+            style = MaterialTheme.typography.bodySmall,
+            fontWeight = FontWeight.Medium,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis
+        )
         // Controles +/-
-        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(2.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
             IconButton(
-                onClick = { if (item.quantity == 1) onRemove(item.product.id) else onUpdateQuantity(item.product.id, item.quantity - 1) },
+                onClick = {
+                    if (item.quantity == 1) onRemove(item.product.id)
+                    else onUpdateQuantity(item.product.id, item.quantity - 1)
+                },
                 modifier = Modifier.size(28.dp)
             ) {
                 Icon(
-                    if (item.quantity == 1) Icons.Default.Delete else Icons.Default.Remove, null,
-                    Modifier.size(15.dp),
-                    tint = if (item.quantity == 1) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface
+                    if (item.quantity == 1) Icons.Default.DeleteOutline else Icons.Default.Remove,
+                    null,
+                    Modifier.size(14.dp),
+                    tint = if (item.quantity == 1) MaterialTheme.colorScheme.error
+                           else MaterialTheme.colorScheme.onSurface.copy(0.65f)
                 )
             }
             Text(
-                item.quantity.toString(),
-                style = MaterialTheme.typography.titleSmall,
+                "${item.quantity}",
+                style = MaterialTheme.typography.bodySmall,
                 fontWeight = FontWeight.Bold,
                 modifier = Modifier.widthIn(min = 18.dp),
                 textAlign = TextAlign.Center
@@ -662,18 +767,14 @@ private fun CartItemRow(
                 onClick = { onUpdateQuantity(item.product.id, item.quantity + 1) },
                 modifier = Modifier.size(28.dp)
             ) {
-                Icon(Icons.Default.Add, null, Modifier.size(15.dp))
+                Icon(Icons.Default.Add, null, Modifier.size(14.dp), tint = color)
             }
         }
-
-        // Subtotal
         Text(
             fmt.format(item.subtotal),
             style = MaterialTheme.typography.bodySmall,
-            fontWeight = FontWeight.Bold,
-            color = color,
-            modifier = Modifier.widthIn(min = 52.dp),
-            textAlign = TextAlign.End
+            fontWeight = FontWeight.SemiBold,
+            color = color
         )
     }
 }

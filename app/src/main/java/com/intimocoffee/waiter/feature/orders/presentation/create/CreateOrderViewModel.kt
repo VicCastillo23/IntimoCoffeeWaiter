@@ -163,6 +163,21 @@ class CreateOrderViewModel @Inject constructor(
         }
     }
 
+    fun triggerFidelitySearch() {
+        val phone = _uiState.value.customerPhone
+        if (phone.length >= 7) {
+            fidelityLookupJob?.cancel()
+            fidelityLookupJob = viewModelScope.launch {
+                _uiState.value = _uiState.value.copy(isFidelityLoading = true)
+                val customer = fidelityRepository.getByPhone(phone)
+                _uiState.value = _uiState.value.copy(
+                    fidelityCustomer = customer,
+                    isFidelityLoading = false
+                )
+            }
+        }
+    }
+
     fun updateCustomerName(name: String) {
         _uiState.value = _uiState.value.copy(customerName = name)
     }
