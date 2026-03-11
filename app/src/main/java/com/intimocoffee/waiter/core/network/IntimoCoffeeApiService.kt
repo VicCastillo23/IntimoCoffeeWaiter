@@ -59,6 +59,16 @@ interface IntimoCoffeeApiService {
     
     @GET("api/tables")
     suspend fun getAllTables(): Response<List<TableResponse>>
+
+    // --- Loyalty endpoints (corresponden al servidor Ktor de IntimoCoffeeApp) ---
+
+    /** Busca un cliente por teléfono. Retorna 200+data si existe, 401 si no. */
+    @POST("loyalty/customer/login")
+    suspend fun loyaltyLoginByPhone(@Body request: LoyaltyLoginRequest): Response<LoyaltyLoginApiResponse>
+
+    /** Vincula una orden a un cliente del programa de lealtad (suma puntos en el servidor). */
+    @POST("loyalty/link-order")
+    suspend fun loyaltyLinkOrder(@Body request: LoyaltyLinkOrderRequest): Response<ApiResponse>
 }
 
 // Request/Response DTOs
@@ -188,6 +198,43 @@ data class ProductResponse(
     @SerialName("isActive") val isActive: Boolean,
     @SerialName("stockQuantity") val stockQuantity: Int?,
     @SerialName("minStockLevel") val minStockLevel: Int?
+)
+
+// --- Loyalty DTOs ---
+
+@Serializable
+data class LoyaltyLoginRequest(
+    @SerialName("phone") val phone: String
+)
+
+/** Datos del cliente devueltos por el servidor de loyalty */
+@Serializable
+data class LoyaltyCustomerData(
+    @SerialName("id") val id: Long,
+    @SerialName("name") val name: String,
+    @SerialName("lastName") val lastName: String? = null,
+    @SerialName("phone") val phone: String,
+    @SerialName("totalPoints") val totalPoints: Int = 0,
+    @SerialName("lifetimePoints") val lifetimePoints: Int = 0,
+    @SerialName("tier") val tier: String = "BRONZE",
+    @SerialName("totalVisits") val totalVisits: Int = 0,
+    @SerialName("totalSpent") val totalSpent: Double = 0.0,
+    @SerialName("createdAt") val createdAt: String = ""
+)
+
+@Serializable
+data class LoyaltyLoginApiResponse(
+    @SerialName("success") val success: Boolean,
+    @SerialName("data") val data: LoyaltyCustomerData? = null,
+    @SerialName("message") val message: String? = null,
+    @SerialName("timestamp") val timestamp: String = ""
+)
+
+@Serializable
+data class LoyaltyLinkOrderRequest(
+    @SerialName("orderId") val orderId: Long,
+    @SerialName("customerId") val customerId: Long,
+    @SerialName("orderTotal") val orderTotal: Double? = null
 )
 
 @Serializable

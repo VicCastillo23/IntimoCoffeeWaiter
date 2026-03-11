@@ -11,8 +11,9 @@ interface FidelityRepository {
      * Adds points to a customer's account based on the order total.
      * Rule: 1 point per $1,000 COP.
      * Creates the customer if they don't exist yet.
+     * Optionally pass [orderId] to link the order on the remote server.
      */
-    suspend fun addPoints(phone: String, orderTotal: BigDecimal): FidelityCustomer
+    suspend fun addPoints(phone: String, orderTotal: BigDecimal, orderId: Long = 0L): FidelityCustomer
 
     fun getAllCustomers(): Flow<List<FidelityCustomer>>
 
