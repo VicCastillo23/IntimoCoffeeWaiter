@@ -23,6 +23,8 @@ import java.math.BigDecimal
 import java.text.NumberFormat
 import java.util.*
 
+private enum class WaiterTab { MIS_ORDENES, LISTAS }
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun WaiterMainScreen(
@@ -31,166 +33,178 @@ fun WaiterMainScreen(
     onLogout: () -> Unit = {},
 ) {
     val uiState by viewModel.uiState.collectAsState()
+    var selectedTab by remember { mutableStateOf(WaiterTab.MIS_ORDENES) }
 
     LaunchedEffect(Unit) {
         viewModel.loadOrders()
     }
 
+    // Ordenes del mesero actual
+    val currentUserId = uiState.currentUserId
+    val waiterOrders = uiState.orders
+        .filter { order ->
+            (currentUserId == null || order.createdBy == currentUserId) &&
+            !OrderStatus.isCompleted(order.status)
+        }
+        .sortedByDescending { it.createdAt }
+
+    // Ordenes listas para entregar
+    val readyOrders = uiState.orders
+        .filter { it.status == OrderStatus.READY }
+        .sortedBy { it.createdAt }
+
+    // Auto-cambiar a "Listas" si hay nuevas
+    val readyCount = readyOrders.size
+
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
         floatingActionButton = {
-            FloatingActionButton(
+            ExtendedFloatingActionButton(
                 onClick = onNavigateToCreateOrder,
                 containerColor = MaterialTheme.colorScheme.primary,
-                contentColor = MaterialTheme.colorScheme.onPrimary
-            ) {
-                Icon(
-                    Icons.Default.Add,
-                    contentDescription = "Nueva Orden",
-                    modifier = Modifier.size(24.dp)
-                )
-            }
+                contentColor = MaterialTheme.colorScheme.onPrimary,
+                icon = { Icon(Icons.Default.Add, contentDescription = null) },
+                text = { Text("Nueva Orden", fontWeight = FontWeight.SemiBold) }
+            )
         }
     ) { paddingValues ->
         Column(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(paddingValues)
-                .padding(16.dp)
+                .padding(horizontal = 16.dp)
         ) {
-        // Header
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Column {
+            Spacer(modifier = Modifier.height(12.dp))
+
+            // ── Header ────────────────────────────────────────────
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
                 Text(
-                    text = "👨‍🍽️ Intimo Coffee - Meseros",
-                    style = MaterialTheme.typography.headlineMedium,
+                    text = uiState.currentUserName?.let { "👨\u200d🍽️ $it" } ?: "👨\u200d🍽️ Mesero",
+                    style = MaterialTheme.typography.titleLarge,
                     fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.primary
                 )
-                Text(
-                    text = "Panel de órdenes de mesero",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-            
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                IconButton(
-                    onClick = onLogout,
-                    modifier = Modifier
-                        .background(
-                            MaterialTheme.colorScheme.error.copy(alpha = 0.1f),
-                            RoundedCornerShape(12.dp)
-                        )
-                        .padding(8.dp)
-                ) {
-                    Icon(
-                        Icons.Default.Logout,
-                        contentDescription = "Cerrar sesión",
-                        tint = MaterialTheme.colorScheme.error
-                    )
-                }
 
-                IconButton(
-                    onClick = { viewModel.refreshOrders() },
-                    modifier = Modifier
-                        .background(
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    IconButton(
+                        onClick = { viewModel.refreshOrders() },
+                        modifier = Modifier.background(
                             MaterialTheme.colorScheme.primary.copy(alpha = 0.1f),
                             RoundedCornerShape(12.dp)
                         )
-                        .padding(8.dp)
-                ) {
-                    Icon(
-                        Icons.Default.Refresh, 
-                        contentDescription = "Actualizar",
-                        tint = MaterialTheme.colorScheme.primary
-                    )
-                }
-                
-                // Show notification count
-                val readyOrdersCount = uiState.orders.count { it.status == OrderStatus.READY }
-                if (readyOrdersCount > 0) {
-                    Surface(
-                        shape = RoundedCornerShape(16.dp),
-                        color = MaterialTheme.colorScheme.error
                     ) {
-                        Text(
-                            text = "$readyOrdersCount",
-                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
-                            style = MaterialTheme.typography.labelMedium,
-                            color = MaterialTheme.colorScheme.onError,
-                            fontWeight = FontWeight.Bold
+                        Icon(
+                            Icons.Default.Refresh,
+                            contentDescription = "Actualizar",
+                            tint = MaterialTheme.colorScheme.primary
+                        )
+                    }
+                    IconButton(
+                        onClick = onLogout,
+                        modifier = Modifier.background(
+                            MaterialTheme.colorScheme.error.copy(alpha = 0.1f),
+                            RoundedCornerShape(12.dp)
+                        )
+                    ) {
+                        Icon(
+                            Icons.Default.Logout,
+                            contentDescription = "Cerrar sesión",
+                            tint = MaterialTheme.colorScheme.error
                         )
                     }
                 }
             }
-        }
 
-        Spacer(modifier = Modifier.height(24.dp))
+            Spacer(modifier = Modifier.height(16.dp))
 
-        if (uiState.isLoading) {
-            Box(
-                modifier = Modifier.fillMaxSize(),
-                contentAlignment = Alignment.Center
-            ) {
-                CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
-            }
-        } else {
-            val currentUserId = uiState.currentUserId
-
-            // 1) Órdenes filtradas por mesero actual
-            val waiterOrders = uiState.orders
-                .filter { order ->
-                    (currentUserId == null || order.createdBy == currentUserId) &&
-                    !OrderStatus.isCompleted(order.status)
-                }
-                .sortedByDescending { it.createdAt }
-
-            // 2) Órdenes listas para entregar en mesa (READY)
-            val readyOrders = uiState.orders
-                .filter { it.status == OrderStatus.READY }
-                .sortedBy { it.createdAt }
-
+            // ── Chips de navegación ────────────────────────────────
             Row(
-                modifier = Modifier.fillMaxSize(),
-                horizontalArrangement = Arrangement.spacedBy(16.dp)
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                // Section 1: Orders for current waiter
-                Card(
-                    modifier = Modifier
-                        .weight(1f)
-                        .fillMaxHeight(),
-                    colors = CardDefaults.cardColors(
-                        containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f)
-                    )
-                ) {
-                    Column(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .padding(16.dp),
-                        verticalArrangement = Arrangement.spacedBy(12.dp)
-                    ) {
+                FilterChip(
+                    selected = selectedTab == WaiterTab.MIS_ORDENES,
+                    onClick = { selectedTab = WaiterTab.MIS_ORDENES },
+                    label = {
                         Text(
-                            text = uiState.currentUserName?.let { "Órdenes de $it" } ?: "Órdenes del mesero",
-                            style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.SemiBold,
-                            color = MaterialTheme.colorScheme.onSurface
+                            "📋 Mis Órdenes (${waiterOrders.size})",
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontWeight = if (selectedTab == WaiterTab.MIS_ORDENES) FontWeight.Bold else FontWeight.Normal
                         )
+                    },
+                    modifier = Modifier.height(44.dp)
+                )
 
-                        if (waiterOrders.isEmpty()) {
+                BadgedBox(
+                    badge = {
+                        if (readyCount > 0) {
+                            Badge(containerColor = MaterialTheme.colorScheme.error) {
+                                Text(
+                                    readyCount.toString(),
+                                    color = MaterialTheme.colorScheme.onError
+                                )
+                            }
+                        }
+                    }
+                ) {
+                    FilterChip(
+                        selected = selectedTab == WaiterTab.LISTAS,
+                        onClick = { selectedTab = WaiterTab.LISTAS },
+                        label = {
                             Text(
-                                text = "No tienes órdenes asignadas.",
+                                "🔔 Listas para servir",
                                 style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                fontWeight = if (selectedTab == WaiterTab.LISTAS) FontWeight.Bold else FontWeight.Normal
                             )
+                        },
+                        modifier = Modifier.height(44.dp)
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.height(12.dp))
+
+            // ── Contenido del tab seleccionado ─────────────────────
+            if (uiState.isLoading) {
+                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
+                }
+            } else {
+                when (selectedTab) {
+                    WaiterTab.MIS_ORDENES -> {
+                        if (waiterOrders.isEmpty()) {
+                            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                                Column(
+                                    horizontalAlignment = Alignment.CenterHorizontally,
+                                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                                ) {
+                                    Icon(
+                                        Icons.Default.Receipt,
+                                        contentDescription = null,
+                                        modifier = Modifier.size(56.dp),
+                                        tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.25f)
+                                    )
+                                    Text(
+                                        "No tienes órdenes activas.",
+                                        style = MaterialTheme.typography.bodyLarge,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                    Text(
+                                        "Usa el botón + para crear una nueva.",
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
+                                    )
+                                }
+                            }
                         } else {
                             LazyColumn(
                                 modifier = Modifier.fillMaxSize(),
-                                verticalArrangement = Arrangement.spacedBy(12.dp)
+                                verticalArrangement = Arrangement.spacedBy(12.dp),
+                                contentPadding = PaddingValues(bottom = 80.dp)
                             ) {
                                 items(waiterOrders) { order ->
                                     WaiterOrderCard(
@@ -203,53 +217,32 @@ fun WaiterMainScreen(
                             }
                         }
                     }
-                }
 
-                // Section 2: Orders ready to deliver
-                Card(
-                    modifier = Modifier
-                        .weight(1f)
-                        .fillMaxHeight(),
-                    colors = CardDefaults.cardColors(
-                        containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f)
-                    )
-                ) {
-                    Column(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .padding(16.dp),
-                        verticalArrangement = Arrangement.spacedBy(12.dp)
-                    ) {
-                        Text(
-                            text = "Órdenes listas para entregar",
-                            style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.SemiBold,
-                            color = MaterialTheme.colorScheme.onSurface
-                        )
-
+                    WaiterTab.LISTAS -> {
                         if (readyOrders.isEmpty()) {
-                            Column(
-                                modifier = Modifier.fillMaxSize(),
-                                horizontalAlignment = Alignment.CenterHorizontally,
-                                verticalArrangement = Arrangement.Center
-                            ) {
-                                Icon(
-                                    Icons.Default.Restaurant,
-                                    contentDescription = null,
-                                    modifier = Modifier.size(48.dp),
-                                    tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.3f)
-                                )
-                                Spacer(modifier = Modifier.height(8.dp))
-                                Text(
-                                    text = "No hay órdenes listas para servir.",
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
+                            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                                Column(
+                                    horizontalAlignment = Alignment.CenterHorizontally,
+                                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                                ) {
+                                    Icon(
+                                        Icons.Default.Restaurant,
+                                        contentDescription = null,
+                                        modifier = Modifier.size(56.dp),
+                                        tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.25f)
+                                    )
+                                    Text(
+                                        "No hay órdenes listas para servir.",
+                                        style = MaterialTheme.typography.bodyLarge,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
                             }
                         } else {
                             LazyColumn(
                                 modifier = Modifier.fillMaxSize(),
-                                verticalArrangement = Arrangement.spacedBy(12.dp)
+                                verticalArrangement = Arrangement.spacedBy(12.dp),
+                                contentPadding = PaddingValues(bottom = 80.dp)
                             ) {
                                 items(readyOrders) { order ->
                                     WaiterOrderCard(
@@ -264,7 +257,6 @@ fun WaiterMainScreen(
                     }
                 }
             }
-        }
         }
     }
 }

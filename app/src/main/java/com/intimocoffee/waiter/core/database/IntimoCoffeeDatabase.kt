@@ -18,9 +18,10 @@ import com.intimocoffee.waiter.core.database.entity.*
         OrderItemEntity::class,
         TableEntity::class,
         ReservationEntity::class,
-        NotificationEntity::class
+        NotificationEntity::class,
+        FidelityCustomerEntity::class
     ],
-    version = 6,
+    version = 7,
     exportSchema = false
 )
 abstract class IntimoCoffeeDatabase : RoomDatabase() {
@@ -32,6 +33,7 @@ abstract class IntimoCoffeeDatabase : RoomDatabase() {
     abstract fun tableDao(): TableDao
     abstract fun reservationDao(): ReservationDao
     abstract fun notificationDao(): NotificationDao
+    abstract fun fidelityCustomerDao(): FidelityCustomerDao
     
     companion object {
         @Volatile
@@ -138,6 +140,25 @@ abstract class IntimoCoffeeDatabase : RoomDatabase() {
             }
         }
         
+        // Migration from version 6 to 7: Add fidelity_customers table
+        private val MIGRATION_6_7 = object : Migration(6, 7) {
+            override fun migrate(database: SupportSQLiteDatabase) {
+                database.execSQL("""
+                    CREATE TABLE IF NOT EXISTS `fidelity_customers` (
+                        `id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                        `phone` TEXT NOT NULL,
+                        `name` TEXT NOT NULL DEFAULT '',
+                        `totalPoints` INTEGER NOT NULL DEFAULT 0,
+                        `createdAt` INTEGER NOT NULL,
+                        `updatedAt` INTEGER NOT NULL
+                    )
+                """)
+                database.execSQL(
+                    "CREATE UNIQUE INDEX IF NOT EXISTS `index_fidelity_customers_phone` ON `fidelity_customers` (`phone`)"
+                )
+            }
+        }
+
         // Migration from version 5 to 6: Add new OrderEntity fields
         private val MIGRATION_5_6 = object : Migration(5, 6) {
             override fun migrate(database: SupportSQLiteDatabase) {
@@ -159,7 +180,7 @@ abstract class IntimoCoffeeDatabase : RoomDatabase() {
                     IntimoCoffeeDatabase::class.java,
                     "intimo_coffee_database"
                 )
-                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6)
+                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7)
                     .fallbackToDestructiveMigration() // For development - recreates DB if migration fails
                     .fallbackToDestructiveMigrationOnDowngrade()
                     .build()

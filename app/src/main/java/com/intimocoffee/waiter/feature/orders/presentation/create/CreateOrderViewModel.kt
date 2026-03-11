@@ -5,6 +5,8 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.intimocoffee.waiter.core.network.RemoteOrderService
 import com.intimocoffee.waiter.feature.auth.domain.repository.AuthRepository
+import com.intimocoffee.waiter.feature.fidelity.domain.model.FidelityCustomer
+import com.intimocoffee.waiter.feature.fidelity.domain.repository.FidelityRepository
 import com.intimocoffee.waiter.feature.inventory.domain.service.InventoryService
 import com.intimocoffee.waiter.feature.inventory.domain.service.StockAvailabilityReport
 import com.intimocoffee.waiter.feature.orders.domain.model.CartItem
@@ -19,6 +21,8 @@ import com.intimocoffee.waiter.feature.tables.domain.model.Table
 import com.intimocoffee.waiter.feature.tables.domain.model.TableStatus
 import com.intimocoffee.waiter.feature.tables.domain.repository.TableRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -46,7 +50,12 @@ data class CreateOrderUiState(
     val orderCreated: Boolean = false,
     val stockAvailabilityReport: StockAvailabilityReport? = null,
     val showStockWarnings: Boolean = false,
-    val isValidatingStock: Boolean = false
+    val isValidatingStock: Boolean = false,
+    // Fidelidad
+    val customerPhone: String = "",
+    val customerName: String = "",
+    val fidelityCustomer: FidelityCustomer? = null,
+    val isFidelityLoading: Boolean = false
 ) {
     val taxRate = BigDecimal("0.10") // 10% tax
     
@@ -58,6 +67,9 @@ data class CreateOrderUiState(
     
     val calculatedTotal: BigDecimal
         get() = calculatedSubtotal.add(calculatedTax)
+
+    val fidelityPointsToEarn: Int
+        get() = FidelityRepository.calculatePoints(calculatedTotal)
         
     val filteredProducts: List<Product>
         get() = if (selectedCategoryId == null) {
@@ -75,7 +87,10 @@ class CreateOrderViewModel @Inject constructor(
     private val inventoryService: InventoryService,
     private val remoteOrderService: RemoteOrderService,
     private val authRepository: AuthRepository,
+    private val fidelityRepository: FidelityRepository,
 ) : ViewModel() {
+
+    private var fidelityLookupJob: Job? = null
 
     private val _uiState = MutableStateFlow(CreateOrderUiState())
     val uiState: StateFlow<CreateOrderUiState> = _uiState.asStateFlow()
@@ -130,6 +145,26 @@ class CreateOrderViewModel @Inject constructor(
     
     fun selectCategory(categoryId: Long?) {
         _uiState.value = _uiState.value.copy(selectedCategoryId = categoryId)
+    }
+
+    fun updatePhone(phone: String) {
+        _uiState.value = _uiState.value.copy(customerPhone = phone, fidelityCustomer = null)
+        if (phone.length >= 7) {
+            fidelityLookupJob?.cancel()
+            fidelityLookupJob = viewModelScope.launch {
+                delay(400) // debounce
+                _uiState.value = _uiState.value.copy(isFidelityLoading = true)
+                val customer = fidelityRepository.getByPhone(phone)
+                _uiState.value = _uiState.value.copy(
+                    fidelityCustomer = customer,
+                    isFidelityLoading = false
+                )
+            }
+        }
+    }
+
+    fun updateCustomerName(name: String) {
+        _uiState.value = _uiState.value.copy(customerName = name)
     }
 
     fun addProductToCart(product: Product) {
@@ -280,10 +315,13 @@ class CreateOrderViewModel @Inject constructor(
                 )
                 
                 // Create order directly on the main server using API
+                val customerLabel = currentState.customerName.ifBlank {
+                    currentState.customerPhone.ifBlank { null }
+                }
                 val result = remoteOrderService.createOrderOnServer(
                     tableId = selectedTable.id,
                     tableName = selectedTable.displayName,
-                    customerName = null,
+                    customerName = customerLabel,
                     cartItems = currentState.cartItems,
                     notes = null,
                     createdBy = createdByUserId
@@ -293,6 +331,17 @@ class CreateOrderViewModel @Inject constructor(
                 
                 if (result.isSuccess && orderId > 0) {
                     Log.d("CreateOrderViewModel", "Order created successfully on remote server with ID: $orderId")
+
+                    // Save fidelity points if phone was provided
+                    val phone = currentState.customerPhone
+                    if (phone.isNotBlank()) {
+                        try {
+                            fidelityRepository.addPoints(phone, currentState.calculatedTotal)
+                            Log.d("CreateOrderViewModel", "Fidelity points saved for $phone")
+                        } catch (e: Exception) {
+                            Log.w("CreateOrderViewModel", "Failed to save fidelity points: ${e.message}")
+                        }
+                    }
                     
                     // Update local table status (if needed)
                     if (selectedTable.status == TableStatus.FREE) {

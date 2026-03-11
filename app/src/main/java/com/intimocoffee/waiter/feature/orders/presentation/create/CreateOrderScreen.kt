@@ -31,6 +31,7 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.compose.runtime.collectAsState
 import com.intimocoffee.waiter.R
+import com.intimocoffee.waiter.feature.fidelity.domain.model.FidelityCustomer
 import com.intimocoffee.waiter.feature.orders.domain.model.CartItem
 import com.intimocoffee.waiter.feature.products.domain.model.Category
 import com.intimocoffee.waiter.feature.products.domain.model.Product
@@ -147,6 +148,13 @@ fun CreateOrderScreen(
                         subtotal = uiState.calculatedSubtotal,
                         tax = uiState.calculatedTax,
                         total = uiState.calculatedTotal,
+                        customerPhone = uiState.customerPhone,
+                        customerName = uiState.customerName,
+                        fidelityCustomer = uiState.fidelityCustomer,
+                        fidelityPointsToEarn = uiState.fidelityPointsToEarn,
+                        isFidelityLoading = uiState.isFidelityLoading,
+                        onPhoneChange = viewModel::updatePhone,
+                        onCustomerNameChange = viewModel::updateCustomerName,
                         onUpdateQuantity = viewModel::updateCartItemQuantity,
                         onUpdateNotes = viewModel::updateCartItemNotes,
                         onRemoveItem = viewModel::removeCartItem,
@@ -260,7 +268,7 @@ private fun ProductSelectionSection(
             fontWeight = FontWeight.SemiBold
         )
 
-        // Category tabs bar
+        // Category chips bar — tamaño grande para uso táctil
         LazyRow(
             horizontalArrangement = Arrangement.spacedBy(8.dp),
             contentPadding = PaddingValues(horizontal = 4.dp)
@@ -268,34 +276,42 @@ private fun ProductSelectionSection(
             item {
                 FilterChip(
                     onClick = { onCategorySelect(null) },
-                    label = { Text("Todos") },
+                    label = {
+                        Text(
+                            "🍽️ Todos",
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontWeight = if (selectedCategoryId == null) FontWeight.Bold else FontWeight.Normal
+                        )
+                    },
                     selected = selectedCategoryId == null,
-                    modifier = Modifier.padding(horizontal = 2.dp)
+                    modifier = Modifier
+                        .height(44.dp)
+                        .padding(horizontal = 2.dp)
                 )
             }
-            
+
             items(categories) { category ->
                 FilterChip(
                     onClick = { onCategorySelect(category.id) },
                     label = {
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(4.dp)
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
                         ) {
-                            category.icon?.let { 
-                                Text(
-                                    text = it,
-                                    style = MaterialTheme.typography.labelMedium
-                                )
+                            category.icon?.let {
+                                Text(text = it, style = MaterialTheme.typography.bodyLarge)
                             }
                             Text(
                                 text = category.name,
-                                style = MaterialTheme.typography.labelMedium
+                                style = MaterialTheme.typography.bodyMedium,
+                                fontWeight = if (selectedCategoryId == category.id) FontWeight.Bold else FontWeight.Normal
                             )
                         }
                     },
                     selected = selectedCategoryId == category.id,
-                    modifier = Modifier.padding(horizontal = 2.dp)
+                    modifier = Modifier
+                        .height(44.dp)
+                        .padding(horizontal = 2.dp)
                 )
             }
         }
@@ -322,6 +338,13 @@ private fun CartSection(
     subtotal: BigDecimal,
     tax: BigDecimal,
     total: BigDecimal,
+    customerPhone: String,
+    customerName: String,
+    fidelityCustomer: FidelityCustomer?,
+    fidelityPointsToEarn: Int,
+    isFidelityLoading: Boolean,
+    onPhoneChange: (String) -> Unit,
+    onCustomerNameChange: (String) -> Unit,
     onUpdateQuantity: (Long, Int) -> Unit,
     onUpdateNotes: (Long, String) -> Unit,
     onRemoveItem: (Long) -> Unit,
@@ -329,7 +352,7 @@ private fun CartSection(
     isCreateOrderEnabled: Boolean
 ) {
     val currencyFormat = NumberFormat.getCurrencyInstance(Locale("es", "CO"))
-    
+
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -341,7 +364,119 @@ private fun CartSection(
             fontWeight = FontWeight.SemiBold
         )
 
-        Spacer(modifier = Modifier.height(16.dp))
+        Spacer(modifier = Modifier.height(12.dp))
+
+        // ── Fidelidad ────────────────────────────────────────────
+        OutlinedTextField(
+            value = customerPhone,
+            onValueChange = onPhoneChange,
+            label = { Text("Tel. cliente (puntos fidelidad)") },
+            leadingIcon = { Icon(Icons.Default.Phone, contentDescription = null) },
+            trailingIcon = {
+                if (isFidelityLoading) CircularProgressIndicator(modifier = Modifier.size(20.dp))
+            },
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
+            singleLine = true,
+            modifier = Modifier.fillMaxWidth()
+        )
+
+        if (customerPhone.length >= 7) {
+            Spacer(modifier = Modifier.height(6.dp))
+            if (fidelityCustomer != null) {
+                Surface(
+                    shape = RoundedCornerShape(8.dp),
+                    color = MaterialTheme.colorScheme.primary.copy(alpha = 0.1f)
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 12.dp, vertical = 8.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            Icon(
+                                Icons.Default.Star,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.size(18.dp)
+                            )
+                            Column {
+                                Text(
+                                    text = fidelityCustomer.displayName,
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = MaterialTheme.colorScheme.primary
+                                )
+                                Text(
+                                    text = "${fidelityCustomer.totalPoints} pts actuales",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
+                                )
+                            }
+                        }
+                        if (fidelityPointsToEarn > 0) {
+                            Surface(
+                                shape = RoundedCornerShape(12.dp),
+                                color = MaterialTheme.colorScheme.primary
+                            ) {
+                                Text(
+                                    text = "+$fidelityPointsToEarn pts",
+                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
+                                    style = MaterialTheme.typography.labelMedium,
+                                    color = MaterialTheme.colorScheme.onPrimary,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
+                        }
+                    }
+                }
+            } else if (!isFidelityLoading) {
+                Surface(
+                    shape = RoundedCornerShape(8.dp),
+                    color = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.5f)
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 12.dp, vertical = 8.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            Icon(
+                                Icons.Default.PersonAdd,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.secondary,
+                                modifier = Modifier.size(18.dp)
+                            )
+                            Text(
+                                text = "Cliente nuevo",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSecondaryContainer
+                            )
+                        }
+                        if (fidelityPointsToEarn > 0) {
+                            Text(
+                                text = "+$fidelityPointsToEarn pts a ganar",
+                                style = MaterialTheme.typography.labelMedium,
+                                color = MaterialTheme.colorScheme.secondary,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                    }
+                }
+            }
+        }
+        // ────────────────────────────────────────────────────────
+
+        Spacer(modifier = Modifier.height(12.dp))
 
         if (cartItems.isEmpty()) {
             Box(

@@ -55,6 +55,11 @@ object DatabaseModule {
     fun provideNotificationDao(database: IntimoCoffeeDatabase): NotificationDao {
         return database.notificationDao()
     }
+
+    @Provides
+    fun provideFidelityCustomerDao(database: IntimoCoffeeDatabase): com.intimocoffee.waiter.core.database.dao.FidelityCustomerDao {
+        return database.fidelityCustomerDao()
+    }
     
     @Provides
     @Singleton
