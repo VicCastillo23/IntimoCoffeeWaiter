@@ -12,6 +12,7 @@ import com.intimocoffee.waiter.feature.orders.domain.model.Order
 import com.intimocoffee.waiter.feature.orders.domain.model.OrderItem
 import com.intimocoffee.waiter.feature.orders.domain.model.OrderStatus
 import com.intimocoffee.waiter.feature.orders.domain.repository.OrderRepository
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flow
@@ -214,6 +215,8 @@ class OrderRepositoryImpl @Inject constructor(
                     )
                     emit(emptyList())
                 }
+            } catch (e: CancellationException) {
+                throw e // no atrapar cancelaciones de coroutine/flow
             } catch (e: Exception) {
                 Log.e(
                     "OrderRepository",
@@ -281,6 +284,8 @@ class OrderRepositoryImpl @Inject constructor(
                     Log.w("OrderRepository", "Failed to fetch active orders from server, returning empty list")
                     emit(emptyList())
                 }
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 Log.e("OrderRepository", "Exception fetching active orders from server, returning empty list", e)
                 emit(emptyList())

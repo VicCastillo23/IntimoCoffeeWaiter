@@ -1,11 +1,12 @@
 package com.intimocoffee.waiter.feature.orders.presentation.create
 
-import androidx.compose.foundation.background
-import androidx.compose.foundation.border
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.grid.GridCells
@@ -20,28 +21,43 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.compose.runtime.collectAsState
-import com.intimocoffee.waiter.R
 import com.intimocoffee.waiter.feature.fidelity.domain.model.FidelityCustomer
 import com.intimocoffee.waiter.feature.orders.domain.model.CartItem
+import com.intimocoffee.waiter.feature.orders.presentation.components.StockWarningsDialog
 import com.intimocoffee.waiter.feature.products.domain.model.Category
 import com.intimocoffee.waiter.feature.products.domain.model.Product
 import com.intimocoffee.waiter.feature.tables.domain.model.Table
 import com.intimocoffee.waiter.feature.tables.domain.model.TableStatus
-import com.intimocoffee.waiter.ui.theme.IntimoCoffeeAppTheme
 import java.math.BigDecimal
 import java.text.NumberFormat
 import java.util.*
 
+// ─── Colores por categoría ───────────────────────────────────────────────────
+private val categoryColorMap = mapOf(
+    1L to Color(0xFF8D4925),
+    2L to Color(0xFF1E88E5),
+    3L to Color(0xFFFF6F00),
+    4L to Color(0xFF43A047),
+    5L to Color(0xFFF9A825),
+)
+private val defaultCatColor = Color(0xFF757575)
+
+private fun catColor(id: Long): Color = categoryColorMap[id] ?: defaultCatColor
+
+private fun parseHexColor(hex: String): Color = try {
+    Color(android.graphics.Color.parseColor(hex))
+} catch (_: Exception) { defaultCatColor }
+
+// ─── Pantalla principal ──────────────────────────────────────────────────────
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun CreateOrderScreen(
@@ -50,31 +66,43 @@ fun CreateOrderScreen(
     viewModel: CreateOrderViewModel = hiltViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsState()
-    
-    LaunchedEffect(uiState.error) {
-        uiState.error?.let {
-            // Show error snackbar or handle error
-        }
-    }
-    
-    // Navigate back when order is successfully created
+
     LaunchedEffect(uiState.orderCreated) {
-        if (uiState.orderCreated) {
-            onNavigateBack()
-        }
+        if (uiState.orderCreated) onNavigateBack()
     }
 
     Column(
         modifier = modifier
             .fillMaxSize()
-            .background(MaterialTheme.colorScheme.surface)
+            .background(MaterialTheme.colorScheme.background)
     ) {
-        // Top App Bar
+        // TopAppBar
         TopAppBar(
-            title = { Text("Nueva Orden") },
+            title = {
+                Column {
+                    Text("Nueva Orden", fontWeight = FontWeight.Bold)
+                    uiState.selectedTable?.let { t ->
+                        Text(
+                            "Mesa ${t.displayName} seleccionada",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.85f)
+                        )
+                    }
+                }
+            },
             navigationIcon = {
                 IconButton(onClick = onNavigateBack) {
-                    Icon(Icons.Default.ArrowBack, contentDescription = "Volver")
+                    Icon(Icons.Default.ArrowBack, "Volver")
+                }
+            },
+            actions = {
+                if (uiState.isLoading || uiState.isValidatingStock) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(22.dp),
+                        color = MaterialTheme.colorScheme.onPrimary,
+                        strokeWidth = 2.dp
+                    )
+                    Spacer(Modifier.width(12.dp))
                 }
             },
             colors = TopAppBarDefaults.topAppBarColors(
@@ -84,389 +112,410 @@ fun CreateOrderScreen(
             )
         )
 
-        if (uiState.isLoading) {
-            Box(
-                modifier = Modifier.fillMaxSize(),
-                contentAlignment = Alignment.Center
-            ) {
+        // Error banner
+        uiState.error?.let { msg ->
+            Surface(color = MaterialTheme.colorScheme.errorContainer, modifier = Modifier.fillMaxWidth()) {
+                Text(
+                    msg,
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onErrorContainer
+                )
+            }
+        }
+
+        // Fila de mesas
+        TableChipsRow(
+            tables = uiState.availableTables,
+            selectedTable = uiState.selectedTable,
+            onSelect = viewModel::selectTable
+        )
+
+        // Contenido principal
+        if (uiState.isLoading && uiState.products.isEmpty()) {
+            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 CircularProgressIndicator()
             }
         } else {
-            Row(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(16.dp),
-                horizontalArrangement = Arrangement.spacedBy(16.dp)
-            ) {
-                // Left Panel - Table Selection & Product Selection
-                Card(
-                    modifier = Modifier
-                        .weight(1f)
-                        .fillMaxHeight(),
-                    colors = CardDefaults.cardColors(
-                        containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f)
-                    )
-                ) {
-                    Column(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .padding(16.dp),
-                        verticalArrangement = Arrangement.spacedBy(16.dp)
-                    ) {
-                        // Table Selection Section
-                        TableSelectionSection(
-                            selectedTable = uiState.selectedTable,
-                            availableTables = uiState.availableTables,
-                            onSelectTable = viewModel::selectTable,
-                            onShowTableSelector = {} // Not needed anymore
-                        )
-
-                        Divider()
-
-                        // Product Selection Section
-                        ProductSelectionSection(
-                            products = uiState.filteredProducts,
-                            categories = emptyList(), // Temporarily empty
-                            selectedCategoryId = uiState.selectedCategoryId,
-                            onCategorySelect = viewModel::selectCategory,
-                            onProductClick = viewModel::addProductToCart
-                        )
-                    }
-                }
-
-                // Right Panel - Cart & Checkout
-                Card(
-                    modifier = Modifier
-                        .weight(1f)
-                        .fillMaxHeight(),
-                    colors = CardDefaults.cardColors(
-                        containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f)
-                    )
-                ) {
-                    CartSection(
-                        cartItems = uiState.cartItems,
-                        subtotal = uiState.calculatedSubtotal,
-                        tax = uiState.calculatedTax,
-                        total = uiState.calculatedTotal,
-                        customerPhone = uiState.customerPhone,
-                        customerName = uiState.customerName,
-                        fidelityCustomer = uiState.fidelityCustomer,
-                        fidelityPointsToEarn = uiState.fidelityPointsToEarn,
-                        isFidelityLoading = uiState.isFidelityLoading,
-                        onPhoneChange = viewModel::updatePhone,
-                        onCustomerNameChange = viewModel::updateCustomerName,
-                        onUpdateQuantity = viewModel::updateCartItemQuantity,
-                        onUpdateNotes = viewModel::updateCartItemNotes,
-                        onRemoveItem = viewModel::removeCartItem,
-                        onCreateOrder = viewModel::createOrder,
-                        isCreateOrderEnabled = uiState.selectedTable != null && uiState.cartItems.isNotEmpty()
-                    )
-                }
-            }
-        }
-    }
-
-    // Dialogs removed temporarily - table selection is done inline
-
-}
-
-@Composable
-private fun TableSelectionSection(
-    selectedTable: Table?,
-    availableTables: List<Table>,
-    onSelectTable: (Table) -> Unit,
-    onShowTableSelector: () -> Unit
-) {
-    Column(
-        verticalArrangement = Arrangement.spacedBy(12.dp)
-    ) {
-        Text(
-            text = "Mesa",
-            style = MaterialTheme.typography.titleMedium,
-            fontWeight = FontWeight.SemiBold
-        )
-
-        // Show selected table info if any
-        selectedTable?.let { table ->
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                colors = CardDefaults.cardColors(
-                    containerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.1f)
-                ),
-                border = androidx.compose.foundation.BorderStroke(
-                    1.dp,
-                    MaterialTheme.colorScheme.primary
+            Row(modifier = Modifier.fillMaxSize()) {
+                // Izquierda: Productos
+                ProductPanel(
+                    categories = uiState.categories,
+                    selectedCategoryId = uiState.selectedCategoryId,
+                    products = uiState.filteredProducts,
+                    onCategorySelect = viewModel::selectCategory,
+                    onProductClick = viewModel::addProductToCart,
+                    modifier = Modifier.weight(0.58f).fillMaxHeight()
                 )
-            ) {
-                Column(
+
+                Box(
                     modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(12.dp)
-                ) {
-                    Text(
-                        text = "Mesa seleccionada: ${table.displayName}",
-                        style = MaterialTheme.typography.bodyMedium,
-                        fontWeight = FontWeight.SemiBold
-                    )
-                    
-                    if (table.status == TableStatus.OCCUPIED) {
-                        Text(
-                            text = "⚠️ Mesa ocupada - Creando orden adicional",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.primary,
-                            fontWeight = FontWeight.Medium
-                        )
-                    }
-                }
-            }
-        }
+                        .width(1.dp)
+                        .fillMaxHeight()
+                        .background(MaterialTheme.colorScheme.outlineVariant)
+                )
 
-        // Show all available tables in a grid
-        if (availableTables.isNotEmpty()) {
-            Text(
-                text = "Mesas disponibles: ${availableTables.size}",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
-            )
-
-            LazyVerticalGrid(
-                columns = GridCells.Fixed(4), // 4 columns to give more space per card
-                verticalArrangement = Arrangement.spacedBy(8.dp),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                modifier = Modifier.height(160.dp) // Increased height for more info
-            ) {
-                items(availableTables) { table ->
-                    EnhancedTableCard(
-                        table = table,
-                        isSelected = selectedTable?.id == table.id,
-                        onClick = { onSelectTable(table) },
-                        modifier = Modifier
-                            .aspectRatio(1f)
-                            .fillMaxWidth() // Use available width
-                    )
-                }
+                // Derecha: Carrito
+                CartPanel(
+                    cartItems = uiState.cartItems,
+                    total = uiState.calculatedTotal,
+                    customerPhone = uiState.customerPhone,
+                    fidelityCustomer = uiState.fidelityCustomer,
+                    fidelityPointsToEarn = uiState.fidelityPointsToEarn,
+                    isFidelityLoading = uiState.isFidelityLoading,
+                    onPhoneChange = viewModel::updatePhone,
+                    onUpdateQuantity = viewModel::updateCartItemQuantity,
+                    onRemoveItem = viewModel::removeCartItem,
+                    onCreateOrder = viewModel::createOrder,
+                    isCreateOrderEnabled = uiState.selectedTable != null && uiState.cartItems.isNotEmpty(),
+                    modifier = Modifier.weight(0.42f).fillMaxHeight()
+                )
             }
         }
     }
+
+    // Diálogo de stock insuficiente
+    if (uiState.showStockWarnings && uiState.stockAvailabilityReport != null) {
+        StockWarningsDialog(
+            stockReport = uiState.stockAvailabilityReport!!,
+            onProceedAnyway = viewModel::proceedWithWarnings,
+            onDismiss = viewModel::hideStockWarnings
+        )
+    }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
+// ─── Fila compacta de mesas ──────────────────────────────────────────────────
 @Composable
-private fun ProductSelectionSection(
-    products: List<Product>,
-    categories: List<Category>,
-    selectedCategoryId: Long?,
-    onCategorySelect: (Long?) -> Unit,
-    onProductClick: (Product) -> Unit
+private fun TableChipsRow(
+    tables: List<Table>,
+    selectedTable: Table?,
+    onSelect: (Table) -> Unit
 ) {
     Column(
-        verticalArrangement = Arrangement.spacedBy(12.dp)
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.06f))
+            .padding(horizontal = 12.dp, vertical = 6.dp)
     ) {
-        Text(
-            text = "Productos",
-            style = MaterialTheme.typography.titleMedium,
-            fontWeight = FontWeight.SemiBold
-        )
-
-        // Category chips bar — tamaño grande para uso táctil
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(6.dp)
+        ) {
+            Icon(
+                Icons.Default.TableRestaurant, null,
+                modifier = Modifier.size(15.dp),
+                tint = MaterialTheme.colorScheme.primary
+            )
+            Text(
+                text = if (selectedTable != null) "Mesa ${selectedTable.displayName} ✓"
+                       else "Seleccionar mesa",
+                style = MaterialTheme.typography.labelMedium,
+                fontWeight = FontWeight.SemiBold,
+                color = MaterialTheme.colorScheme.primary
+            )
+        }
+        Spacer(Modifier.height(6.dp))
         LazyRow(
             horizontalArrangement = Arrangement.spacedBy(8.dp),
-            contentPadding = PaddingValues(horizontal = 4.dp)
+            contentPadding = PaddingValues(horizontal = 2.dp)
         ) {
-            item {
-                FilterChip(
-                    onClick = { onCategorySelect(null) },
-                    label = {
+            items(tables) { table ->
+                val isSelected = selectedTable?.id == table.id
+                val tColor = when (table.status) {
+                    TableStatus.OCCUPIED -> MaterialTheme.colorScheme.error
+                    TableStatus.RESERVED -> MaterialTheme.colorScheme.tertiary
+                    else -> MaterialTheme.colorScheme.primary
+                }
+                Surface(
+                    onClick = { onSelect(table) },
+                    modifier = Modifier.size(44.dp),
+                    shape = RoundedCornerShape(10.dp),
+                    color = if (isSelected) tColor.copy(alpha = 0.18f) else MaterialTheme.colorScheme.surface,
+                    border = BorderStroke(
+                        if (isSelected) 2.dp else 1.dp,
+                        tColor.copy(if (isSelected) 1f else 0.35f)
+                    )
+                ) {
+                    Box(contentAlignment = Alignment.Center) {
                         Text(
-                            "🍽️ Todos",
-                            style = MaterialTheme.typography.bodyMedium,
-                            fontWeight = if (selectedCategoryId == null) FontWeight.Bold else FontWeight.Normal
+                            table.number.toString(),
+                            style = MaterialTheme.typography.titleSmall,
+                            fontWeight = if (isSelected) FontWeight.ExtraBold else FontWeight.Normal,
+                            color = tColor
                         )
-                    },
-                    selected = selectedCategoryId == null,
-                    modifier = Modifier
-                        .height(44.dp)
-                        .padding(horizontal = 2.dp)
-                )
-            }
-
-            items(categories) { category ->
-                FilterChip(
-                    onClick = { onCategorySelect(category.id) },
-                    label = {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(6.dp)
-                        ) {
-                            category.icon?.let {
-                                Text(text = it, style = MaterialTheme.typography.bodyLarge)
-                            }
-                            Text(
-                                text = category.name,
-                                style = MaterialTheme.typography.bodyMedium,
-                                fontWeight = if (selectedCategoryId == category.id) FontWeight.Bold else FontWeight.Normal
-                            )
-                        }
-                    },
-                    selected = selectedCategoryId == category.id,
-                    modifier = Modifier
-                        .height(44.dp)
-                        .padding(horizontal = 2.dp)
-                )
-            }
-        }
-
-        LazyVerticalGrid(
-            columns = GridCells.Adaptive(minSize = 120.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-            modifier = Modifier.fillMaxSize()
-        ) {
-            items(products) { product ->
-                ProductCard(
-                    product = product,
-                    onClick = { onProductClick(product) }
-                )
+                    }
+                }
             }
         }
     }
 }
 
+// ─── Panel izquierdo: categorías + productos ─────────────────────────────────
 @Composable
-private fun CartSection(
+private fun ProductPanel(
+    categories: List<Category>,
+    selectedCategoryId: Long?,
+    products: List<Product>,
+    onCategorySelect: (Long?) -> Unit,
+    onProductClick: (Product) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Column(modifier = modifier) {
+        // Barra de categorías
+        LazyRow(
+            modifier = Modifier
+                .fillMaxWidth()
+                .background(MaterialTheme.colorScheme.surface)
+                .padding(horizontal = 10.dp, vertical = 8.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            item {
+                CategoryPill(
+                    label = "🍽️  Todo",
+                    color = MaterialTheme.colorScheme.primary,
+                    selected = selectedCategoryId == null,
+                    onClick = { onCategorySelect(null) }
+                )
+            }
+            items(categories) { cat ->
+                CategoryPill(
+                    label = "${cat.icon ?: ""}  ${cat.name}",
+                    color = parseHexColor(cat.color),
+                    selected = selectedCategoryId == cat.id,
+                    onClick = { onCategorySelect(cat.id) }
+                )
+            }
+        }
+
+        Divider(color = MaterialTheme.colorScheme.outlineVariant)
+
+        // Grid de productos
+        if (products.isEmpty()) {
+            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                Text(
+                    "Sin productos",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.35f)
+                )
+            }
+        } else {
+            LazyVerticalGrid(
+                columns = GridCells.Adaptive(minSize = 118.dp),
+                modifier = Modifier.fillMaxSize(),
+                contentPadding = PaddingValues(8.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                items(products) { product ->
+                    ProductCard(product = product, onClick = { onProductClick(product) })
+                }
+            }
+        }
+    }
+}
+
+// ─── Chip / pill de categoría ─────────────────────────────────────────────────
+@Composable
+private fun CategoryPill(label: String, color: Color, selected: Boolean, onClick: () -> Unit) {
+    Surface(
+        onClick = onClick,
+        shape = RoundedCornerShape(20.dp),
+        color = if (selected) color else color.copy(alpha = 0.10f),
+        border = BorderStroke(1.dp, color.copy(alpha = if (selected) 1f else 0.25f))
+    ) {
+        Text(
+            text = label,
+            modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp),
+            style = MaterialTheme.typography.bodyMedium,
+            fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal,
+            color = if (selected) Color.White else color
+        )
+    }
+}
+
+// ─── Tarjeta de producto ──────────────────────────────────────────────────────
+@Composable
+private fun ProductCard(product: Product, onClick: () -> Unit) {
+    val fmt = NumberFormat.getCurrencyInstance(Locale("es", "CO"))
+    val isOut = product.stockQuantity?.let { it == 0 } ?: false
+    val color = catColor(product.categoryId)
+
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .aspectRatio(0.82f)
+            .clickable(enabled = !isOut) { onClick() },
+        shape = RoundedCornerShape(12.dp),
+        elevation = CardDefaults.cardElevation(if (isOut) 0.dp else 3.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = if (isOut) MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f)
+                            else color.copy(alpha = 0.07f)
+        )
+    ) {
+        Column(Modifier.fillMaxSize()) {
+            // Barra de color
+            Box(
+                Modifier
+                    .fillMaxWidth()
+                    .height(5.dp)
+                    .background(if (isOut) MaterialTheme.colorScheme.outline.copy(0.2f) else color.copy(0.75f))
+            )
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(horizontal = 10.dp, vertical = 8.dp),
+                verticalArrangement = Arrangement.SpaceBetween
+            ) {
+                Text(
+                    text = product.name,
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.SemiBold,
+                    maxLines = 3,
+                    overflow = TextOverflow.Ellipsis,
+                    color = if (isOut) MaterialTheme.colorScheme.onSurface.copy(0.35f)
+                            else MaterialTheme.colorScheme.onSurface
+                )
+                Spacer(Modifier.weight(1f))
+                Row(
+                    Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.Bottom
+                ) {
+                    if (isOut) {
+                        Surface(
+                            shape = RoundedCornerShape(6.dp),
+                            color = MaterialTheme.colorScheme.error.copy(0.12f)
+                        ) {
+                            Text(
+                                "Agotado",
+                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.error,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                        }
+                    } else {
+                        Text(
+                            fmt.format(product.price),
+                            style = MaterialTheme.typography.titleSmall,
+                            fontWeight = FontWeight.ExtraBold,
+                            color = color
+                        )
+                        Surface(
+                            shape = RoundedCornerShape(8.dp),
+                            color = color.copy(alpha = 0.15f)
+                        ) {
+                            Icon(
+                                Icons.Default.Add,
+                                contentDescription = "Agregar",
+                                modifier = Modifier.size(26.dp).padding(4.dp),
+                                tint = color
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+// ─── Panel derecho: carrito ───────────────────────────────────────────────────
+@Composable
+private fun CartPanel(
     cartItems: List<CartItem>,
-    subtotal: BigDecimal,
-    tax: BigDecimal,
     total: BigDecimal,
     customerPhone: String,
-    customerName: String,
     fidelityCustomer: FidelityCustomer?,
     fidelityPointsToEarn: Int,
     isFidelityLoading: Boolean,
     onPhoneChange: (String) -> Unit,
-    onCustomerNameChange: (String) -> Unit,
     onUpdateQuantity: (Long, Int) -> Unit,
-    onUpdateNotes: (Long, String) -> Unit,
     onRemoveItem: (Long) -> Unit,
     onCreateOrder: () -> Unit,
-    isCreateOrderEnabled: Boolean
+    isCreateOrderEnabled: Boolean,
+    modifier: Modifier = Modifier
 ) {
-    val currencyFormat = NumberFormat.getCurrencyInstance(Locale("es", "CO"))
+    val fmt = NumberFormat.getCurrencyInstance(Locale("es", "CO"))
 
     Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(16.dp)
+        modifier = modifier
+            .background(MaterialTheme.colorScheme.surface)
+            .padding(horizontal = 12.dp, vertical = 10.dp)
     ) {
-        Text(
-            text = "Resumen de Orden",
-            style = MaterialTheme.typography.titleMedium,
-            fontWeight = FontWeight.SemiBold
-        )
-
-        Spacer(modifier = Modifier.height(12.dp))
-
-        // ── Fidelidad ────────────────────────────────────────────
+        // Campo teléfono
         OutlinedTextField(
             value = customerPhone,
             onValueChange = onPhoneChange,
-            label = { Text("Tel. cliente (puntos fidelidad)") },
-            leadingIcon = { Icon(Icons.Default.Phone, contentDescription = null) },
+            label = { Text("Teléfono") },
+            leadingIcon = {
+                Icon(Icons.Default.Phone, null, Modifier.size(18.dp), tint = MaterialTheme.colorScheme.primary)
+            },
             trailingIcon = {
-                if (isFidelityLoading) CircularProgressIndicator(modifier = Modifier.size(20.dp))
+                if (isFidelityLoading) CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp)
             },
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
             singleLine = true,
-            modifier = Modifier.fillMaxWidth()
+            modifier = Modifier.fillMaxWidth(),
+            textStyle = MaterialTheme.typography.bodyMedium,
+            shape = RoundedCornerShape(10.dp)
         )
 
-        if (customerPhone.length >= 7) {
-            Spacer(modifier = Modifier.height(6.dp))
-            if (fidelityCustomer != null) {
-                Surface(
-                    shape = RoundedCornerShape(8.dp),
-                    color = MaterialTheme.colorScheme.primary.copy(alpha = 0.1f)
+        // Card de fidelidad
+        AnimatedVisibility(
+            visible = customerPhone.length >= 7 && !isFidelityLoading,
+            enter = fadeIn(),
+            exit = fadeOut()
+        ) {
+            Card(
+                modifier = Modifier.fillMaxWidth().padding(top = 6.dp),
+                shape = RoundedCornerShape(10.dp),
+                colors = CardDefaults.cardColors(
+                    containerColor = if (fidelityCustomer != null)
+                        MaterialTheme.colorScheme.primary.copy(0.10f)
+                    else
+                        MaterialTheme.colorScheme.secondaryContainer.copy(0.45f)
+                )
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 8.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
                     Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 12.dp, vertical = 8.dp),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
                     ) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(6.dp)
-                        ) {
-                            Icon(
-                                Icons.Default.Star,
-                                contentDescription = null,
-                                tint = MaterialTheme.colorScheme.primary,
-                                modifier = Modifier.size(18.dp)
+                        Icon(
+                            if (fidelityCustomer != null) Icons.Default.Star else Icons.Default.PersonAdd,
+                            null,
+                            Modifier.size(16.dp),
+                            tint = if (fidelityCustomer != null) MaterialTheme.colorScheme.primary
+                                   else MaterialTheme.colorScheme.secondary
+                        )
+                        Column {
+                            Text(
+                                fidelityCustomer?.displayName ?: "Cliente nuevo",
+                                style = MaterialTheme.typography.bodySmall,
+                                fontWeight = FontWeight.SemiBold,
+                                color = if (fidelityCustomer != null) MaterialTheme.colorScheme.primary
+                                        else MaterialTheme.colorScheme.secondary
                             )
-                            Column {
+                            if (fidelityCustomer != null) {
                                 Text(
-                                    text = fidelityCustomer.displayName,
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    fontWeight = FontWeight.SemiBold,
-                                    color = MaterialTheme.colorScheme.primary
-                                )
-                                Text(
-                                    text = "${fidelityCustomer.totalPoints} pts actuales",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
-                                )
-                            }
-                        }
-                        if (fidelityPointsToEarn > 0) {
-                            Surface(
-                                shape = RoundedCornerShape(12.dp),
-                                color = MaterialTheme.colorScheme.primary
-                            ) {
-                                Text(
-                                    text = "+$fidelityPointsToEarn pts",
-                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
-                                    style = MaterialTheme.typography.labelMedium,
-                                    color = MaterialTheme.colorScheme.onPrimary,
-                                    fontWeight = FontWeight.Bold
+                                    "${fidelityCustomer.totalPoints} pts acumulados",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurface.copy(0.55f)
                                 )
                             }
                         }
                     }
-                }
-            } else if (!isFidelityLoading) {
-                Surface(
-                    shape = RoundedCornerShape(8.dp),
-                    color = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.5f)
-                ) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 12.dp, vertical = 8.dp),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(6.dp)
-                        ) {
-                            Icon(
-                                Icons.Default.PersonAdd,
-                                contentDescription = null,
-                                tint = MaterialTheme.colorScheme.secondary,
-                                modifier = Modifier.size(18.dp)
-                            )
+                    if (fidelityPointsToEarn > 0) {
+                        Surface(shape = RoundedCornerShape(12.dp), color = MaterialTheme.colorScheme.primary) {
                             Text(
-                                text = "Cliente nuevo",
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.onSecondaryContainer
-                            )
-                        }
-                        if (fidelityPointsToEarn > 0) {
-                            Text(
-                                text = "+$fidelityPointsToEarn pts a ganar",
+                                "+$fidelityPointsToEarn pts",
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
                                 style = MaterialTheme.typography.labelMedium,
-                                color = MaterialTheme.colorScheme.secondary,
+                                color = MaterialTheme.colorScheme.onPrimary,
                                 fontWeight = FontWeight.Bold
                             )
                         }
@@ -474,15 +523,13 @@ private fun CartSection(
                 }
             }
         }
-        // ────────────────────────────────────────────────────────
 
-        Spacer(modifier = Modifier.height(12.dp))
+        Divider(modifier = Modifier.padding(vertical = 8.dp))
 
+        // Items
         if (cartItems.isEmpty()) {
             Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .weight(1f),
+                modifier = Modifier.weight(1f).fillMaxWidth(),
                 contentAlignment = Alignment.Center
             ) {
                 Column(
@@ -490,15 +537,14 @@ private fun CartSection(
                     verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     Icon(
-                        imageVector = Icons.Default.ShoppingCart,
-                        contentDescription = null,
-                        modifier = Modifier.size(48.dp),
-                        tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.3f)
+                        Icons.Default.ShoppingCart, null,
+                        Modifier.size(44.dp),
+                        tint = MaterialTheme.colorScheme.onSurface.copy(0.18f)
                     )
                     Text(
-                        text = "No hay productos en la orden",
+                        "Toca un producto\npara agregar",
                         style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+                        color = MaterialTheme.colorScheme.onSurface.copy(0.38f),
                         textAlign = TextAlign.Center
                     )
                 }
@@ -506,522 +552,128 @@ private fun CartSection(
         } else {
             LazyColumn(
                 modifier = Modifier.weight(1f),
-                verticalArrangement = Arrangement.spacedBy(8.dp)
+                verticalArrangement = Arrangement.spacedBy(1.dp)
             ) {
-                items(cartItems) { cartItem ->
-                    CartItemCard(
-                        cartItem = cartItem,
-                        onUpdateQuantity = onUpdateQuantity,
-                        onUpdateNotes = onUpdateNotes,
-                        onRemove = onRemoveItem
-                    )
+                items(cartItems) { item ->
+                    CartItemRow(item = item, onUpdateQuantity = onUpdateQuantity, onRemove = onRemoveItem)
+                    Divider(color = MaterialTheme.colorScheme.outlineVariant.copy(0.4f))
                 }
-            }
-
-            Spacer(modifier = Modifier.height(16.dp))
-
-            // Order Summary
-            Card(
-                colors = CardDefaults.cardColors(
-                    containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
-                )
-            ) {
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(16.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween
-                    ) {
-                        Text("Subtotal:")
-                        Text(currencyFormat.format(subtotal))
-                    }
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween
-                    ) {
-                        Text("IVA (10%):")
-                        Text(currencyFormat.format(tax))
-                    }
-                    Divider()
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween
-                    ) {
-                        Text(
-                            text = "Total:",
-                            style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.Bold
-                        )
-                        Text(
-                            text = currencyFormat.format(total),
-                            style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.Bold
-                        )
-                    }
-                }
-            }
-
-            Spacer(modifier = Modifier.height(16.dp))
-
-            Button(
-                onClick = onCreateOrder,
-                enabled = isCreateOrderEnabled,
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Icon(
-                    imageVector = Icons.Default.Check,
-                    contentDescription = null,
-                    modifier = Modifier.size(20.dp)
-                )
-                Spacer(modifier = Modifier.width(8.dp))
-                Text("Crear Orden")
             }
         }
-    }
-}
 
-@Composable
-private fun TableCard(
-    table: Table,
-    isSelected: Boolean,
-    onClick: () -> Unit,
-    modifier: Modifier = Modifier
-) {
-    Card(
-        modifier = modifier.clickable { onClick() },
-        colors = CardDefaults.cardColors(
-            containerColor = if (isSelected) {
-                MaterialTheme.colorScheme.primary.copy(alpha = 0.1f)
-            } else {
-                MaterialTheme.colorScheme.surface
-            }
-        ),
-        border = if (isSelected) {
-            androidx.compose.foundation.BorderStroke(2.dp, MaterialTheme.colorScheme.primary)
-        } else null
-    ) {
-        Box(
-            modifier = Modifier.fillMaxSize(),
-            contentAlignment = Alignment.Center
+        // Total + botón
+        Divider(modifier = Modifier.padding(top = 8.dp))
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
         ) {
-            Text(
-                text = table.number.toString(),
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.SemiBold,
-                textAlign = TextAlign.Center
-            )
-        }
-    }
-}
-
-@Composable
-private fun EnhancedTableCard(
-    table: Table,
-    isSelected: Boolean,
-    onClick: () -> Unit,
-    modifier: Modifier = Modifier
-) {
-    Card(
-        modifier = modifier.clickable { onClick() },
-        colors = CardDefaults.cardColors(
-            containerColor = if (isSelected) {
-                MaterialTheme.colorScheme.primary.copy(alpha = 0.2f)
-            } else when (table.status) {
-                TableStatus.OCCUPIED -> MaterialTheme.colorScheme.error.copy(alpha = 0.1f)
-                TableStatus.RESERVED -> MaterialTheme.colorScheme.tertiary.copy(alpha = 0.1f)
-                else -> MaterialTheme.colorScheme.surface
+            Column {
+                Text("Total", style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurface.copy(0.55f))
+                Text(
+                    fmt.format(total),
+                    style = MaterialTheme.typography.headlineSmall,
+                    fontWeight = FontWeight.ExtraBold,
+                    color = MaterialTheme.colorScheme.primary
+                )
             }
-        ),
-        border = if (isSelected) {
-            BorderStroke(2.dp, MaterialTheme.colorScheme.primary)
-        } else {
-            null
+            if (cartItems.isNotEmpty()) {
+                Text(
+                    "${cartItems.sumOf { it.quantity }} items",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurface.copy(0.5f)
+                )
+            }
         }
-    ) {
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(8.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.SpaceBetween
+
+        Button(
+            onClick = onCreateOrder,
+            enabled = isCreateOrderEnabled,
+            modifier = Modifier.fillMaxWidth().height(52.dp),
+            shape = RoundedCornerShape(12.dp)
         ) {
-            // Table number - main focus
-            Text(
-                text = table.number.toString(),
-                style = MaterialTheme.typography.titleLarge,
-                fontWeight = FontWeight.Bold,
-                textAlign = TextAlign.Center,
-                color = if (isSelected) {
-                    MaterialTheme.colorScheme.primary
-                } else {
-                    MaterialTheme.colorScheme.onSurface
-                }
-            )
-            
-            // Zone/description if available
-            if (table.zone.isNotEmpty()) {
-                Text(
-                    text = table.zone,
-                    style = MaterialTheme.typography.labelMedium,
-                    textAlign = TextAlign.Center,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
-                )
-            }
-            
-            // Status indicator
-            Text(
-                text = when (table.status) {
-                    TableStatus.OCCUPIED -> "Ocupada"
-                    TableStatus.RESERVED -> "Reservada"
-                    else -> "Disponible"
-                },
-                style = MaterialTheme.typography.labelSmall,
-                textAlign = TextAlign.Center,
-                fontWeight = FontWeight.Medium,
-                color = when (table.status) {
-                    TableStatus.OCCUPIED -> MaterialTheme.colorScheme.error
-                    TableStatus.RESERVED -> MaterialTheme.colorScheme.tertiary
-                    else -> MaterialTheme.colorScheme.primary
-                }
-            )
+            Icon(Icons.Default.CheckCircle, null, Modifier.size(22.dp))
+            Spacer(Modifier.width(8.dp))
+            Text("Crear Orden", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
         }
     }
 }
 
+// ─── Fila de item en el carrito ───────────────────────────────────────────────
 @Composable
-private fun ProductCard(
-    product: Product,
-    onClick: () -> Unit
-) {
-    val currencyFormat = NumberFormat.getCurrencyInstance(Locale("es", "CO"))
-    val stockQuantity = product.stockQuantity ?: 0
-    val isLowStock = stockQuantity <= (product.minStockLevel ?: 5)
-    val isOutOfStock = stockQuantity == 0
-    
-    Card(
-        modifier = Modifier
-            .fillMaxWidth()
-            .height(100.dp) // Increased height to accommodate stock info
-            .clickable { onClick() },
-        colors = CardDefaults.cardColors(
-            containerColor = when {
-                isOutOfStock -> MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.3f)
-                isLowStock -> MaterialTheme.colorScheme.tertiary.copy(alpha = 0.2f)
-                else -> MaterialTheme.colorScheme.surface
-            }
-        ),
-        border = when {
-            isOutOfStock -> BorderStroke(1.dp, MaterialTheme.colorScheme.error)
-            isLowStock -> BorderStroke(1.dp, MaterialTheme.colorScheme.tertiary)
-            else -> null
-        }
-    ) {
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(8.dp),
-            verticalArrangement = Arrangement.SpaceBetween
-        ) {
-            Text(
-                text = product.name,
-                style = MaterialTheme.typography.bodySmall,
-                fontWeight = FontWeight.SemiBold,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis
-            )
-            
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.Bottom
-            ) {
-                Text(
-                    text = currencyFormat.format(product.price),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.primary,
-                    fontWeight = FontWeight.Bold
-                )
-                
-                Text(
-                    text = when {
-                        isOutOfStock -> "Sin stock"
-                        isLowStock -> "Stock: $stockQuantity ⚠️"
-                        else -> "Stock: $stockQuantity"
-                    },
-                    style = MaterialTheme.typography.labelSmall,
-                    color = when {
-                        isOutOfStock -> MaterialTheme.colorScheme.error
-                        isLowStock -> MaterialTheme.colorScheme.tertiary
-                        else -> MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
-                    },
-                    fontWeight = FontWeight.Medium
-                )
-            }
-        }
-    }
-}
-
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-private fun CartItemCard(
-    cartItem: CartItem,
+private fun CartItemRow(
+    item: CartItem,
     onUpdateQuantity: (Long, Int) -> Unit,
-    onUpdateNotes: (Long, String) -> Unit,
     onRemove: (Long) -> Unit
 ) {
-    val currencyFormat = NumberFormat.getCurrencyInstance(Locale("es", "CO"))
-    var showNotesDialog by remember { mutableStateOf(false) }
-    var notes by remember { mutableStateOf(cartItem.notes ?: "") }
-    
-    Card(
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surface
-        )
+    val fmt = NumberFormat.getCurrencyInstance(Locale("es", "CO"))
+    val color = catColor(item.product.categoryId)
+
+    Row(
+        modifier = Modifier.fillMaxWidth().padding(vertical = 5.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(4.dp)
     ) {
-        Column(
+        // Barra lateral de color
+        Box(
             modifier = Modifier
-                .fillMaxWidth()
-                .padding(12.dp)
-        ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.Top
-            ) {
-                Column(
-                    modifier = Modifier.weight(1f)
-                ) {
-                    Text(
-                        text = cartItem.product.name,
-                        style = MaterialTheme.typography.bodyMedium,
-                        fontWeight = FontWeight.SemiBold,
-                        maxLines = 2,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                    Text(
-                        text = currencyFormat.format(cartItem.unitPrice),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
-                    )
-                    if (cartItem.notes?.isNotBlank() == true) {
-                        Text(
-                            text = "Nota: ${cartItem.notes}",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.primary,
-                            modifier = Modifier.padding(top = 4.dp)
-                        )
-                    }
-                }
-                
-                IconButton(
-                    onClick = { onRemove(cartItem.product.id) },
-                    modifier = Modifier.size(24.dp)
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.Close,
-                        contentDescription = "Eliminar",
-                        modifier = Modifier.size(16.dp)
-                    )
-                }
-            }
-
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(top = 8.dp),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                // Quantity controls
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    IconButton(
-                        onClick = { onUpdateQuantity(cartItem.product.id, cartItem.quantity - 1) },
-                        modifier = Modifier.size(32.dp)
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Remove,
-                            contentDescription = "Reducir cantidad",
-                            modifier = Modifier.size(16.dp)
-                        )
-                    }
-                    
-                    Text(
-                        text = cartItem.quantity.toString(),
-                        style = MaterialTheme.typography.titleMedium,
-                        modifier = Modifier.padding(horizontal = 8.dp)
-                    )
-                    
-                    IconButton(
-                        onClick = { onUpdateQuantity(cartItem.product.id, cartItem.quantity + 1) },
-                        modifier = Modifier.size(32.dp)
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Add,
-                            contentDescription = "Aumentar cantidad",
-                            modifier = Modifier.size(16.dp)
-                        )
-                    }
-                }
-
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    TextButton(
-                        onClick = { showNotesDialog = true }
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Edit,
-                            contentDescription = null,
-                            modifier = Modifier.size(16.dp)
-                        )
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Text("Nota", style = MaterialTheme.typography.bodySmall)
-                    }
-
-                    Text(
-                        text = currencyFormat.format(cartItem.subtotal),
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.SemiBold,
-                        color = MaterialTheme.colorScheme.primary
-                    )
-                }
-            }
-        }
-    }
-    
-    if (showNotesDialog) {
-        AlertDialog(
-            onDismissRequest = { showNotesDialog = false },
-            title = { Text("Agregar Nota") },
-            text = {
-                OutlinedTextField(
-                    value = notes,
-                    onValueChange = { notes = it },
-                    label = { Text("Nota especial") },
-                    placeholder = { Text("Ej: Sin cebolla, punto medio...") },
-                    maxLines = 3,
-                    modifier = Modifier.fillMaxWidth()
-                )
-            },
-            confirmButton = {
-                TextButton(
-                    onClick = {
-                        onUpdateNotes(cartItem.product.id, notes)
-                        showNotesDialog = false
-                    }
-                ) {
-                    Text("Guardar")
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { showNotesDialog = false }) {
-                    Text("Cancelar")
-                }
-            }
+                .width(3.dp)
+                .height(34.dp)
+                .clip(RoundedCornerShape(2.dp))
+                .background(color.copy(alpha = 0.7f))
         )
-    }
-}
 
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-private fun TableSelectorDialog(
-    tables: List<Table>,
-    onTableSelected: (Table) -> Unit,
-    onDismiss: () -> Unit
-) {
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("Seleccionar Mesa") },
-        text = {
-            LazyVerticalGrid(
-                columns = GridCells.Fixed(4),
-                verticalArrangement = Arrangement.spacedBy(8.dp),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                modifier = Modifier.height(200.dp)
-            ) {
-                items(tables) { table ->
-                    TableCard(
-                        table = table,
-                        isSelected = false,
-                        onClick = { onTableSelected(table) },
-                        modifier = Modifier.aspectRatio(1f)
-                    )
-                }
-            }
-        },
-        confirmButton = {},
-        dismissButton = {
-            TextButton(onClick = onDismiss) {
-                Text("Cancelar")
-            }
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                item.product.name,
+                style = MaterialTheme.typography.bodySmall,
+                fontWeight = FontWeight.SemiBold,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+            Text(
+                fmt.format(item.unitPrice),
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurface.copy(0.5f)
+            )
         }
-    )
-}
 
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-private fun ProductSearchDialog(
-    products: List<Product>,
-    searchQuery: String,
-    onSearchQueryChange: (String) -> Unit,
-    onProductSelected: (Product) -> Unit,
-    onDismiss: () -> Unit
-) {
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("Seleccionar Producto") },
-        text = {
-            Column(
-                verticalArrangement = Arrangement.spacedBy(8.dp)
+        // Controles +/-
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(2.dp)) {
+            IconButton(
+                onClick = { if (item.quantity == 1) onRemove(item.product.id) else onUpdateQuantity(item.product.id, item.quantity - 1) },
+                modifier = Modifier.size(28.dp)
             ) {
-                OutlinedTextField(
-                    value = searchQuery,
-                    onValueChange = onSearchQueryChange,
-                    label = { Text("Buscar") },
-                    leadingIcon = {
-                        Icon(Icons.Default.Search, contentDescription = null)
-                    },
-                    modifier = Modifier.fillMaxWidth()
+                Icon(
+                    if (item.quantity == 1) Icons.Default.Delete else Icons.Default.Remove, null,
+                    Modifier.size(15.dp),
+                    tint = if (item.quantity == 1) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface
                 )
-                
-                LazyColumn(
-                    modifier = Modifier.height(300.dp),
-                    verticalArrangement = Arrangement.spacedBy(4.dp)
-                ) {
-                    items(products) { product ->
-                        ProductCard(
-                            product = product,
-                            onClick = { onProductSelected(product) }
-                        )
-                    }
-                }
             }
-        },
-        confirmButton = {},
-        dismissButton = {
-            TextButton(onClick = onDismiss) {
-                Text("Cancelar")
+            Text(
+                item.quantity.toString(),
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.Bold,
+                modifier = Modifier.widthIn(min = 18.dp),
+                textAlign = TextAlign.Center
+            )
+            IconButton(
+                onClick = { onUpdateQuantity(item.product.id, item.quantity + 1) },
+                modifier = Modifier.size(28.dp)
+            ) {
+                Icon(Icons.Default.Add, null, Modifier.size(15.dp))
             }
         }
-    )
-}
 
-@Preview(showBackground = true, widthDp = 1200, heightDp = 800)
-@Composable
-private fun CreateOrderScreenPreview() {
-    IntimoCoffeeAppTheme {
-        CreateOrderScreen(
-            onNavigateBack = { }
+        // Subtotal
+        Text(
+            fmt.format(item.subtotal),
+            style = MaterialTheme.typography.bodySmall,
+            fontWeight = FontWeight.Bold,
+            color = color,
+            modifier = Modifier.widthIn(min = 52.dp),
+            textAlign = TextAlign.End
         )
     }
 }
