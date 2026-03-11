@@ -314,6 +314,38 @@ class RemoteOrderService @Inject constructor(
     }
     
     /**
+     * Gets categories from the main server (includes parent + leaf categories)
+     */
+    suspend fun getCategoriesFromServer(): Result<List<CategoryResponse>> {
+        return try {
+            Log.d("RemoteOrderService", "Fetching categories from server")
+            val response = retrofitProvider.getApiService().getAllCategories()
+            if (response.isSuccessful) {
+                val categories = response.body() ?: emptyList()
+                Log.d("RemoteOrderService", "Retrieved ${categories.size} categories from server")
+                Result.success(categories)
+            } else {
+                Log.e("RemoteOrderService", "Failed to fetch categories from server")
+                Result.failure(Exception("Failed to fetch categories"))
+            }
+        } catch (e: Exception) {
+            Log.e("RemoteOrderService", "Exception fetching categories from server: ${e.message}", e)
+            if (e is java.net.ConnectException || e is java.net.UnknownHostException) {
+                try {
+                    retrofitProvider.rediscoverServer()
+                    val retryResponse = retrofitProvider.getApiService().getAllCategories()
+                    if (retryResponse.isSuccessful) {
+                        return Result.success(retryResponse.body() ?: emptyList())
+                    }
+                } catch (e2: Exception) {
+                    Log.e("RemoteOrderService", "Retry after rediscovery also failed: ${e2.message}")
+                }
+            }
+            Result.failure(e)
+        }
+    }
+
+    /**
      * Gets tables from the main server
      */
     suspend fun getTablesFromServer(): Result<List<TableResponse>> {

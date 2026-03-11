@@ -15,6 +15,7 @@ import com.intimocoffee.waiter.feature.orders.domain.model.OrderItem
 import com.intimocoffee.waiter.feature.orders.domain.model.OrderStatus
 import com.intimocoffee.waiter.feature.orders.domain.repository.OrderRepository
 import com.intimocoffee.waiter.feature.products.domain.model.Category
+import com.intimocoffee.waiter.feature.products.domain.model.ParentCategory
 import com.intimocoffee.waiter.feature.products.domain.model.Product
 import com.intimocoffee.waiter.feature.products.domain.repository.ProductRepository
 import com.intimocoffee.waiter.feature.tables.domain.model.Table
@@ -37,7 +38,12 @@ data class CreateOrderUiState(
     val selectedTable: Table? = null,
     val availableTables: List<Table> = emptyList(),
     val products: List<Product> = emptyList(),
-    val categories: List<Category> = Category.getDefaultCategories(),
+    // Categorías padre (nivel superior, p1-p7)
+    val parentCategories: List<ParentCategory> = emptyList(),
+    // Categorías hoja (subcategorías, IDs 1-18)
+    val categories: List<Category> = emptyList(),
+    // Selección en dos niveles
+    val selectedParentCategoryId: String? = null,
     val selectedCategoryId: Long? = null,
     val cartItems: List<CartItem> = emptyList(),
     val isLoading: Boolean = false,
@@ -72,12 +78,23 @@ data class CreateOrderUiState(
 
     val fidelityPointsToEarn: Int
         get() = FidelityRepository.calculatePoints(calculatedTotal)
-        
+
+    /** Subcategorías visibles para el padre seleccionado */
+    val subCategoriesForParent: List<Category>
+        get() = if (selectedParentCategoryId == null) emptyList()
+                else categories.filter { it.parentCategoryId == selectedParentCategoryId }
+
+    /** Productos filtrados según la selección de dos niveles */
     val filteredProducts: List<Product>
-        get() = if (selectedCategoryId == null) {
-            products
-        } else {
-            products.filter { it.categoryId == selectedCategoryId }
+        get() = when {
+            selectedParentCategoryId == null -> products
+            selectedCategoryId != null -> products.filter { it.categoryId == selectedCategoryId }
+            else -> {
+                val subIds = categories
+                    .filter { it.parentCategoryId == selectedParentCategoryId }
+                    .map { it.id }
+                products.filter { it.categoryId in subIds }
+            }
         }
 }
 
@@ -119,6 +136,42 @@ class CreateOrderViewModel @Inject constructor(
                 _uiState.value = _uiState.value.copy(products = products)
             }
         }
+
+        viewModelScope.launch {
+            try {
+                val result = remoteOrderService.getCategoriesFromServer()
+                if (result.isSuccess) {
+                    val all = result.getOrNull() ?: emptyList()
+                    val parents = all
+                        .filter { it.parentCategoryId == null }
+                        .sortedBy { it.sortOrder }
+                        .map { ParentCategory(id = it.id, name = it.name, color = it.color, sortOrder = it.sortOrder) }
+                    val leaves = all
+                        .filter { it.parentCategoryId != null }
+                        .sortedBy { it.sortOrder }
+                        .mapNotNull { resp ->
+                            val leafId = resp.id.toLongOrNull() ?: return@mapNotNull null
+                            Category(
+                                id = leafId,
+                                name = resp.name,
+                                description = null,
+                                color = resp.color,
+                                icon = null,
+                                isActive = true,
+                                sortOrder = resp.sortOrder,
+                                parentCategoryId = resp.parentCategoryId
+                            )
+                        }
+                    _uiState.value = _uiState.value.copy(
+                        parentCategories = parents,
+                        categories = leaves
+                    )
+                    Log.d("CreateOrderViewModel", "Loaded ${parents.size} parent categories, ${leaves.size} leaf categories")
+                }
+            } catch (e: Exception) {
+                Log.w("CreateOrderViewModel", "Failed to load categories from server: ${e.message}")
+            }
+        }
     }
 
     fun selectTable(table: Table) {
@@ -145,6 +198,17 @@ class CreateOrderViewModel @Inject constructor(
         _uiState.value = _uiState.value.copy(showProductSearch = false)
     }
     
+    /** Selecciona (o deselecciona) una categoría padre. Resetea la subcategoría.
+     *  Si el padre tiene una única subcategoría, la auto-selecciona. */
+    fun selectParentCategory(parentId: String?) {
+        val subCats = _uiState.value.categories.filter { it.parentCategoryId == parentId }
+        val autoLeaf = if (subCats.size == 1) subCats[0].id else null
+        _uiState.value = _uiState.value.copy(
+            selectedParentCategoryId = parentId,
+            selectedCategoryId = autoLeaf
+        )
+    }
+
     fun selectCategory(categoryId: Long?) {
         _uiState.value = _uiState.value.copy(selectedCategoryId = categoryId)
     }

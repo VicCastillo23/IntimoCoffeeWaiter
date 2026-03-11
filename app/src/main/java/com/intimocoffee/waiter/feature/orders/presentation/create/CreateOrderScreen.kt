@@ -43,6 +43,7 @@ import com.intimocoffee.waiter.feature.orders.domain.model.CartItem
 import com.intimocoffee.waiter.feature.orders.presentation.components.ProductModifierSheet
 import com.intimocoffee.waiter.feature.orders.presentation.components.StockWarningsDialog
 import com.intimocoffee.waiter.feature.products.domain.model.Category
+import com.intimocoffee.waiter.feature.products.domain.model.ParentCategory
 import com.intimocoffee.waiter.feature.products.domain.model.Product
 import com.intimocoffee.waiter.feature.tables.domain.model.Table
 import com.intimocoffee.waiter.feature.tables.domain.model.TableStatus
@@ -172,12 +173,27 @@ fun CreateOrderScreen(
             )
         }
 
-        // 6. Chips de categorías
-        CategoryChipsRow(
-            categories = uiState.categories,
-            selectedCategoryId = uiState.selectedCategoryId,
-            onSelect = viewModel::selectCategory
-        )
+        // 6a. Fila de categorías padre
+        if (uiState.parentCategories.isNotEmpty()) {
+            ParentCategoryChipsRow(
+                parents = uiState.parentCategories,
+                selectedParentId = uiState.selectedParentCategoryId,
+                onSelect = viewModel::selectParentCategory
+            )
+        }
+
+        // 6b. Fila de subcategorías (solo cuando hay 2+ hijos)
+        AnimatedVisibility(
+            visible = uiState.subCategoriesForParent.size >= 2,
+            enter = expandVertically(animationSpec = tween(200)) + fadeIn(tween(200)),
+            exit = shrinkVertically(animationSpec = tween(160)) + fadeOut(tween(160))
+        ) {
+            SubCategoryChipsRow(
+                subCategories = uiState.subCategoriesForParent,
+                selectedCategoryId = uiState.selectedCategoryId,
+                onSelect = viewModel::selectCategory
+            )
+        }
 
         Divider(color = MaterialTheme.colorScheme.outlineVariant)
 
@@ -462,12 +478,12 @@ private fun FidelityInfoCard(
     }
 }
 
-// ─── Chips de categorías ──────────────────────────────────────────────────────
+// ─── Fila de categorías padre ─────────────────────────────────────────────────
 @Composable
-private fun CategoryChipsRow(
-    categories: List<Category>,
-    selectedCategoryId: Long?,
-    onSelect: (Long?) -> Unit
+private fun ParentCategoryChipsRow(
+    parents: List<ParentCategory>,
+    selectedParentId: String?,
+    onSelect: (String?) -> Unit
 ) {
     LazyRow(
         modifier = Modifier
@@ -478,18 +494,43 @@ private fun CategoryChipsRow(
     ) {
         item {
             CategoryPill(
-                label = "🍽️  Todo",
+                label = "\uD83C\uDF7D\uFE0F  Todo",
                 color = MaterialTheme.colorScheme.primary,
-                selected = selectedCategoryId == null,
+                selected = selectedParentId == null,
                 onClick = { onSelect(null) }
             )
         }
-        items(categories) { cat ->
+        items(parents) { parent ->
             CategoryPill(
-                label = "${cat.icon ?: ""}  ${cat.name}",
+                label = parent.name,
+                color = parseHexColor(parent.color),
+                selected = selectedParentId == parent.id,
+                onClick = { onSelect(parent.id) }
+            )
+        }
+    }
+}
+
+// ─── Fila de subcategorías ────────────────────────────────────────────────────
+@Composable
+private fun SubCategoryChipsRow(
+    subCategories: List<Category>,
+    selectedCategoryId: Long?,
+    onSelect: (Long?) -> Unit
+) {
+    LazyRow(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f))
+            .padding(horizontal = 10.dp, vertical = 6.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        items(subCategories) { cat ->
+            CategoryPill(
+                label = cat.name,
                 color = parseHexColor(cat.color),
                 selected = selectedCategoryId == cat.id,
-                onClick = { onSelect(cat.id) }
+                onClick = { onSelect(if (selectedCategoryId == cat.id) null else cat.id) }
             )
         }
     }

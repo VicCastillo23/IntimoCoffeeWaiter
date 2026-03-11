@@ -56,6 +56,9 @@ interface IntimoCoffeeApiService {
     // productos/mesas. Los mantenemos por compatibilidad con la configuración API-First.
     @GET("api/products")
     suspend fun getAllProducts(): Response<List<ProductResponse>>
+
+    @GET("api/categories")
+    suspend fun getAllCategories(): Response<List<CategoryResponse>>
     
     @GET("api/tables")
     suspend fun getAllTables(): Response<List<TableResponse>>
@@ -198,6 +201,15 @@ data class ProductResponse(
     @SerialName("isActive") val isActive: Boolean,
     @SerialName("stockQuantity") val stockQuantity: Int?,
     @SerialName("minStockLevel") val minStockLevel: Int?
+)
+
+@Serializable
+data class CategoryResponse(
+    @SerialName("id") val id: String,
+    @SerialName("name") val name: String,
+    @SerialName("color") val color: String,
+    @SerialName("sortOrder") val sortOrder: Int,
+    @SerialName("parentCategoryId") val parentCategoryId: String? = null
 )
 
 // --- Loyalty DTOs ---
