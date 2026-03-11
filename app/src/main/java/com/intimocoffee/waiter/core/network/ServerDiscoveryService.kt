@@ -1,7 +1,12 @@
 package com.intimocoffee.waiter.core.network
 
+import android.content.Context
+import android.net.nsd.NsdManager
+import android.net.nsd.NsdServiceInfo
 import android.util.Log
+import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.*
+import kotlinx.coroutines.suspendCancellableCoroutine
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.logging.HttpLoggingInterceptor
@@ -9,9 +14,12 @@ import java.net.NetworkInterface
 import java.util.concurrent.TimeUnit
 import javax.inject.Inject
 import javax.inject.Singleton
+import kotlin.coroutines.resume
 
 @Singleton
-class ServerDiscoveryService @Inject constructor() {
+class ServerDiscoveryService @Inject constructor(
+    @ApplicationContext private val context: Context
+) {
     
     companion object {
         private const val TAG = "ServerDiscoveryService"
@@ -30,29 +38,100 @@ class ServerDiscoveryService @Inject constructor() {
     
     /**
      * Discover the main IntimoCoffeeApp server automatically.
-     * Scans the full local network range IN PARALLEL so the total time is bounded
-     * by a single timeout (~2 s) regardless of how many IPs don't respond.
+     * Tries NSD/mDNS first (instant), falls back to parallel IP scan.
      */
     suspend fun discoverMainServer(): String? {
         return withContext(Dispatchers.IO) {
+            // 1. NSD/mDNS (instant, no IP scanning)
+            Log.i(TAG, "🔍 Starting NSD discovery...")
+            val nsdUrl = discoverViaNsd()
+            if (nsdUrl != null) {
+                // Validate to avoid stale mDNS cache
+                val nsdIp = nsdUrl.removePrefix("http://").substringBefore(":")
+                val validated = testServer(nsdIp)
+                if (validated != null) {
+                    Log.i(TAG, "✅ NSD server validated: $validated")
+                    return@withContext validated
+                }
+                Log.w(TAG, "⚠️ NSD found $nsdUrl but validation failed (stale cache), falling back to IP scan")
+            }
+
+            // 2. Fallback: parallel IP scan on local subnet + adjacent (.0 ↔ .1)
             val localIp = getLocalIpAddress()
-            val localIpRange = localIp?.substringBeforeLast(".") ?: "192.168.1"
-            Log.i(TAG, "🔍 Starting parallel server discovery. Local IP: $localIp, range: $localIpRange.x")
+            val localSubnet = localIp?.substringBeforeLast(".") ?: "192.168.1"
+
+            val parts = localSubnet.split(".")
+            val adjacentSubnet = if (parts.size == 3) {
+                when (parts[2].toIntOrNull()) {
+                    0 -> "${parts[0]}.${parts[1]}.1"
+                    1 -> "${parts[0]}.${parts[1]}.0"
+                    else -> null
+                }
+            } else null
+
+            val subnets = listOfNotNull(localSubnet, adjacentSubnet)
+            Log.w(TAG, "⚠️ NSD failed, scanning: ${subnets.joinToString(", ") { "$it.x" }}")
 
             supervisorScope {
-                val deferreds = (1..254)
-                    .map { "$localIpRange.$it" }
-                    .filter { it != localIp }
-                    .map { ip -> async { testServer(ip) } }
+                val deferreds = subnets.flatMap { subnet ->
+                    (1..254)
+                        .map { "$subnet.$it" }
+                        .filter { it != localIp }
+                        .map { ip -> async { withTimeoutOrNull(2_000L) { testServer(ip) } } }
+                }
 
                 val result = deferreds.awaitAll().firstOrNull { it != null }
 
                 if (result != null) {
-                    Log.i(TAG, "✅ Server found at: $result")
+                    Log.i(TAG, "✅ Server found via IP scan at: $result")
                 } else {
-                    Log.w(TAG, "❌ Server not found in $localIpRange.1-254")
+                    Log.w(TAG, "❌ Server not found in any subnet")
                 }
                 result
+            }
+        }
+    }
+
+    private suspend fun discoverViaNsd(): String? {
+        return withTimeoutOrNull(8_000L) {
+            suspendCancellableCoroutine { cont ->
+                val nsd = context.getSystemService(Context.NSD_SERVICE) as NsdManager
+                var discoveryListener: NsdManager.DiscoveryListener? = null
+
+                val resolveListener = object : NsdManager.ResolveListener {
+                    override fun onResolveFailed(info: NsdServiceInfo, errorCode: Int) {
+                        Log.e(TAG, "NSD resolve failed: $errorCode")
+                        if (cont.isActive) cont.resume(null)
+                    }
+                    override fun onServiceResolved(info: NsdServiceInfo) {
+                        val url = "http://${info.host.hostAddress}:${info.port}/"
+                        Log.i(TAG, "NSD resolved: $url")
+                        if (cont.isActive) cont.resume(url)
+                    }
+                }
+
+                discoveryListener = object : NsdManager.DiscoveryListener {
+                    override fun onStartDiscoveryFailed(serviceType: String, errorCode: Int) {
+                        Log.e(TAG, "NSD start discovery failed: $errorCode")
+                        if (cont.isActive) cont.resume(null)
+                    }
+                    override fun onStopDiscoveryFailed(serviceType: String, errorCode: Int) {}
+                    override fun onDiscoveryStarted(serviceType: String) {
+                        Log.d(TAG, "NSD discovery started")
+                    }
+                    override fun onDiscoveryStopped(serviceType: String) {}
+                    override fun onServiceFound(info: NsdServiceInfo) {
+                        Log.d(TAG, "NSD service found: ${info.serviceName}")
+                        nsd.stopServiceDiscovery(this)
+                        nsd.resolveService(info, resolveListener)
+                    }
+                    override fun onServiceLost(info: NsdServiceInfo) {}
+                }
+
+                nsd.discoverServices("_intimocoffee._tcp", NsdManager.PROTOCOL_DNS_SD, discoveryListener)
+                cont.invokeOnCancellation {
+                    try { nsd.stopServiceDiscovery(discoveryListener) } catch (_: Exception) {}
+                }
             }
         }
     }

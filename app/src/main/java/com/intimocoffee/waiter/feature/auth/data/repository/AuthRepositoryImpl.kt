@@ -31,7 +31,8 @@ class AuthRepositoryImpl @Inject constructor(
     
     override suspend fun login(username: String, password: String): User? {
         return try {
-            val service = retrofitProvider.getApiService()
+            // Discover (or re-discover) server before every login attempt
+            val service = retrofitProvider.discoverAndRefreshService()
             val response = service.login(LoginRequest(username = username, password = password))
 
             if (response.isSuccessful) {

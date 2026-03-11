@@ -1,7 +1,6 @@
 package com.intimocoffee.waiter.core.network
 
 import android.util.Log
-import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.Json
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
@@ -19,78 +18,56 @@ class DynamicRetrofitProvider @Inject constructor(
     
     companion object {
         private const val TAG = "DynamicRetrofitProvider"
-        // Fallback base URL when discovery fails. For emulator-to-emulator setups,
-        // 10.0.2.2 points to the host, where we forward port 8080 to the main tablet emulator.
-        private const val DEFAULT_BASE_URL = "http://10.0.2.2:8080/" // Fallback
+        // Fallback base URL (emulator only — real devices discover via NSD/IP scan)
+        private const val DEFAULT_BASE_URL = "http://10.0.2.2:8080/"
     }
     
-    private var currentBaseUrl: String? = null
-    private var retrofit: Retrofit? = null
-    private var apiService: IntimoCoffeeApiService? = null
+    @Volatile private var currentBaseUrl: String = DEFAULT_BASE_URL
+    @Volatile private var apiService: IntimoCoffeeApiService = buildService(DEFAULT_BASE_URL)
     
     /**
-     * Get the API service, discovering the server if needed
+     * Returns the cached API service (uses DEFAULT_BASE_URL until discoverAndRefreshService() runs).
      */
-    fun getApiService(): IntimoCoffeeApiService {
-        return apiService ?: synchronized(this) {
-            apiService ?: createApiService().also { apiService = it }
+    fun getApiService(): IntimoCoffeeApiService = apiService
+    
+    /**
+     * Discovers the server and updates the cached service. Must be called before login.
+     */
+    suspend fun discoverAndRefreshService(): IntimoCoffeeApiService {
+        Log.i(TAG, "🔍 Discovering server...")
+        val discoveredUrl = serverDiscoveryService.discoverMainServer()
+        val baseUrl = if (discoveredUrl != null) {
+            Log.i(TAG, "✅ Discovered server: $discoveredUrl")
+            discoveredUrl
+        } else {
+            Log.w(TAG, "⚠️ Discovery failed, using default: $DEFAULT_BASE_URL")
+            DEFAULT_BASE_URL
         }
+        synchronized(this) {
+            currentBaseUrl = baseUrl
+            apiService = buildService(baseUrl)
+        }
+        return apiService
     }
     
     /**
-     * Force rediscovery of the server (useful when connection fails)
+     * Force rediscovery of the server (useful when a connection fails mid-session).
      */
     suspend fun rediscoverServer(): IntimoCoffeeApiService {
         Log.i(TAG, "🔄 Forcing server rediscovery...")
-        synchronized(this) {
-            currentBaseUrl = null
-            retrofit = null
-            apiService = null
-        }
-        return getApiService()
+        return discoverAndRefreshService()
     }
     
     /**
-     * Get current server URL (for debugging)
+     * Get current server URL (for debugging / header display).
      */
-    fun getCurrentServerUrl(): String? = currentBaseUrl
+    fun getCurrentServerUrl(): String = currentBaseUrl
     
-    private fun createApiService(): IntimoCoffeeApiService {
-        try {
-            // Try to discover server
-            val discoveredUrl = runBlocking { 
-                serverDiscoveryService.discoverMainServer()
-            }
-            
-            val baseUrl = if (discoveredUrl != null) {
-                Log.i(TAG, "✅ Using discovered server: $discoveredUrl")
-                currentBaseUrl = discoveredUrl
-                discoveredUrl
-            } else {
-                Log.w(TAG, "⚠️ Server discovery failed, using default: $DEFAULT_BASE_URL")
-                currentBaseUrl = DEFAULT_BASE_URL
-                DEFAULT_BASE_URL
-            }
-            
-            retrofit = Retrofit.Builder()
-                .baseUrl(baseUrl)
-                .client(okHttpClient)
-                .addConverterFactory(json.asConverterFactory("application/json".toMediaType()))
-                .build()
-            
-            return retrofit!!.create(IntimoCoffeeApiService::class.java)
-            
-        } catch (e: Exception) {
-            Log.e(TAG, "❌ Error creating API service", e)
-            // Return a service with default URL as last resort
-            retrofit = Retrofit.Builder()
-                .baseUrl(DEFAULT_BASE_URL)
-                .client(okHttpClient)
-                .addConverterFactory(json.asConverterFactory("application/json".toMediaType()))
-                .build()
-            
-            currentBaseUrl = DEFAULT_BASE_URL
-            return retrofit!!.create(IntimoCoffeeApiService::class.java)
-        }
-    }
+    private fun buildService(baseUrl: String): IntimoCoffeeApiService =
+        Retrofit.Builder()
+            .baseUrl(baseUrl)
+            .client(okHttpClient)
+            .addConverterFactory(json.asConverterFactory("application/json".toMediaType()))
+            .build()
+            .create(IntimoCoffeeApiService::class.java)
 }
