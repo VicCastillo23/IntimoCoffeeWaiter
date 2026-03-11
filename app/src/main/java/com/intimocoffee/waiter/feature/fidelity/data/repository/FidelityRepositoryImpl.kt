@@ -85,14 +85,18 @@ class FidelityRepositoryImpl @Inject constructor(
                 val resp = awsApi.getCustomerByPhone(phone)
                 val serverCustomerId = resp.body()?.data?.id
                 if (serverCustomerId != null) {
-                    awsApi.linkOrder(
+                    val linkResp = awsApi.linkOrder(
                         AwsLinkOrderRequest(
                             orderId = orderId,
                             customerId = serverCustomerId,
                             orderTotal = orderTotal.toDouble()
                         )
                     )
-                    Log.d(TAG, "AWS: orden $orderId vinculada al cliente $serverCustomerId")
+                    if (linkResp.isSuccessful && linkResp.body()?.success == true) {
+                        Log.d(TAG, "AWS: orden $orderId vinculada al cliente $serverCustomerId")
+                    } else {
+                        Log.w(TAG, "AWS: link-order falló para orden $orderId → HTTP ${linkResp.code()}: ${linkResp.body()?.message}")
+                    }
                 }
             } catch (e: Exception) {
                 Log.w(TAG, "AWS: no se pudo vincular orden: ${e.message}")

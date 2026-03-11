@@ -392,8 +392,9 @@ class CreateOrderViewModel @Inject constructor(
                     val phone = currentState.customerPhone
                     if (phone.isNotBlank()) {
                         try {
-                            fidelityRepository.addPoints(phone, currentState.calculatedTotal, orderId)
-                            Log.d("CreateOrderViewModel", "Fidelity points saved for $phone (orderId=$orderId)")
+                            val updatedCustomer = fidelityRepository.addPoints(phone, currentState.calculatedTotal, orderId)
+                            Log.d("CreateOrderViewModel", "Fidelity points saved for $phone (orderId=$orderId, pts=${updatedCustomer.totalPoints})")
+                            _uiState.value = _uiState.value.copy(fidelityCustomer = updatedCustomer)
                         } catch (e: Exception) {
                             Log.w("CreateOrderViewModel", "Failed to save fidelity points: ${e.message}")
                         }
