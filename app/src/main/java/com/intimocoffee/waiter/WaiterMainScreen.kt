@@ -1,5 +1,7 @@
 package com.intimocoffee.waiter
 
+import android.media.AudioManager
+import android.media.ToneGenerator
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -55,6 +57,18 @@ fun WaiterMainScreen(
 
     // Auto-cambiar a "Listas" si hay nuevas
     val readyCount = readyOrders.size
+
+    // Sonido de campana cuando hay nuevas órdenes listas
+    var prevReadyCount by remember { mutableStateOf(-1) }
+    LaunchedEffect(readyCount) {
+        if (prevReadyCount >= 0 && readyCount > prevReadyCount) {
+            try {
+                ToneGenerator(AudioManager.STREAM_RING, 90)
+                    .startTone(ToneGenerator.TONE_PROP_BEEP2, 600)
+            } catch (_: Exception) {}
+        }
+        prevReadyCount = readyCount
+    }
 
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
@@ -119,9 +133,38 @@ fun WaiterMainScreen(
                 }
             }
 
+            // ── Chip de conexión ────────────────────────────────────
+            if (uiState.serverUrl.isNotBlank()) {
+                val displayUrl = uiState.serverUrl
+                    .removePrefix("http://")
+                    .trimEnd('/')
+                Surface(
+                    shape = RoundedCornerShape(20.dp),
+                    color = MaterialTheme.colorScheme.secondaryContainer,
+                    modifier = Modifier.padding(top = 4.dp)
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        Icon(
+                            Icons.Default.Wifi, null,
+                            Modifier.size(12.dp),
+                            tint = MaterialTheme.colorScheme.secondary
+                        )
+                        Text(
+                            "Conectado: $displayUrl",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSecondaryContainer
+                        )
+                    }
+                }
+            }
+
             Spacer(modifier = Modifier.height(16.dp))
 
-            // ── Chips de navegación ────────────────────────────────
+            // ── Chips de navegación ────────────────────────────────────
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(12.dp)

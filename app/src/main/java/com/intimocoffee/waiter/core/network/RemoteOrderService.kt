@@ -384,4 +384,23 @@ class RemoteOrderService @Inject constructor(
             Result.failure(e)
         }
     }
+
+    /**
+     * Gets modifier options (coffee origins, milk types, etc.) from the main server.
+     */
+    suspend fun getModifierOptionsFromServer(): Result<List<ModifierOptionResponse>> {
+        return try {
+            Log.d("RemoteOrderService", "Fetching modifier options from server")
+            val response = retrofitProvider.getApiService().getModifierOptions()
+            if (response.isSuccessful) {
+                Result.success(response.body() ?: emptyList())
+            } else {
+                Log.e("RemoteOrderService", "Failed to fetch modifier options from server")
+                Result.failure(Exception("Failed to fetch modifier options"))
+            }
+        } catch (e: Exception) {
+            Log.e("RemoteOrderService", "Exception fetching modifier options: ${e.message}", e)
+            Result.failure(e)
+        }
+    }
 }

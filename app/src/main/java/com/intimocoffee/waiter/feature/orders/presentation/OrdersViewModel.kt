@@ -11,6 +11,7 @@ import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.*
+import com.intimocoffee.waiter.core.network.DynamicRetrofitProvider
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import javax.inject.Inject
@@ -26,7 +27,8 @@ data class OrdersUiState(
     val searchQuery: String = "",
     val showCreateOrder: Boolean = false,
     val currentUserId: Long? = null,
-    val currentUserName: String? = null
+    val currentUserName: String? = null,
+    val serverUrl: String = ""
 )
 
 @HiltViewModel
@@ -38,6 +40,7 @@ class OrdersViewModel @Inject constructor(
     private val cancelOrderUseCase: CancelOrderUseCase,
     private val getOrderDetailsUseCase: GetOrderDetailsUseCase,
     private val authRepository: AuthRepository,
+    private val retrofitProvider: DynamicRetrofitProvider,
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(OrdersUiState())
@@ -52,6 +55,7 @@ class OrdersViewModel @Inject constructor(
         loadCurrentUser()
         loadOrders()
         startAutoSync()
+        _uiState.update { it.copy(serverUrl = retrofitProvider.getCurrentServerUrl()) }
     }
 
     private fun loadCurrentUser() {
@@ -243,6 +247,7 @@ class OrdersViewModel @Inject constructor(
     }
 
     fun refreshOrders() {
+        _uiState.update { it.copy(serverUrl = retrofitProvider.getCurrentServerUrl()) }
         loadOrders()
     }
 

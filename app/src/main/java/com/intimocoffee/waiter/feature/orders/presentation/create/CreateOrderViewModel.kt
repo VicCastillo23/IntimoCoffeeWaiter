@@ -3,6 +3,7 @@ package com.intimocoffee.waiter.feature.orders.presentation.create
 import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.intimocoffee.waiter.core.network.ModifierOptionResponse
 import com.intimocoffee.waiter.core.network.RemoteOrderService
 import com.intimocoffee.waiter.feature.auth.domain.repository.AuthRepository
 import com.intimocoffee.waiter.feature.fidelity.domain.model.FidelityCustomer
@@ -63,7 +64,11 @@ data class CreateOrderUiState(
     val fidelityCustomer: FidelityCustomer? = null,
     val isFidelityLoading: Boolean = false,
     // Modificadores
-    val productForModifiers: Product? = null
+    val productForModifiers: Product? = null,
+    val modifierOptionsByCategory: Map<Long, List<ModifierOptionResponse>> = emptyMap(),
+    // Sugerencia de cliente de mesa activa
+    val suggestedCustomerName: String? = null,
+    val showCustomerSuggestion: Boolean = false,
 ) {
     val taxRate = BigDecimal("0.10") // 10% tax
     
@@ -172,14 +177,49 @@ class CreateOrderViewModel @Inject constructor(
                 Log.w("CreateOrderViewModel", "Failed to load categories from server: ${e.message}")
             }
         }
+
+        viewModelScope.launch {
+            try {
+                val result = remoteOrderService.getModifierOptionsFromServer()
+                if (result.isSuccess) {
+                    val grouped = (result.getOrNull() ?: emptyList())
+                        .groupBy { it.categoryId.toLongOrNull() ?: 0L }
+                    _uiState.value = _uiState.value.copy(modifierOptionsByCategory = grouped)
+                    Log.d("CreateOrderViewModel", "Loaded modifier options: ${grouped.size} categories")
+                }
+            } catch (e: Exception) {
+                Log.w("CreateOrderViewModel", "Failed to load modifier options: ${e.message}")
+            }
+        }
     }
 
     fun selectTable(table: Table) {
         Log.d("CreateOrderViewModel", "Selecting table: $table")
         _uiState.value = _uiState.value.copy(
             selectedTable = table,
-            showTableSelector = false
+            showTableSelector = false,
+            showCustomerSuggestion = false,
+            suggestedCustomerName = null
         )
+        viewModelScope.launch {
+            try {
+                val result = remoteOrderService.getActiveOrdersFromServer()
+                if (result.isSuccess) {
+                    val suggestion = result.getOrNull()
+                        ?.filter { it.tableId == table.id && !it.customerName.isNullOrBlank() }
+                        ?.firstOrNull()
+                        ?.customerName
+                    if (!suggestion.isNullOrBlank()) {
+                        _uiState.value = _uiState.value.copy(
+                            suggestedCustomerName = suggestion,
+                            showCustomerSuggestion = true
+                        )
+                    }
+                }
+            } catch (e: Exception) {
+                Log.w("CreateOrderViewModel", "Could not fetch active orders for suggestion: ${e.message}")
+            }
+        }
     }
 
     fun showTableSelector() {
@@ -258,10 +298,30 @@ class CreateOrderViewModel @Inject constructor(
         _uiState.value = _uiState.value.copy(productForModifiers = null)
     }
 
+    /** Acepta la sugerencia de cliente de la mesa y rellena el nombre. */
+    fun acceptCustomerSuggestion() {
+        val name = _uiState.value.suggestedCustomerName ?: return
+        _uiState.value = _uiState.value.copy(
+            customerName = name,
+            showCustomerSuggestion = false
+        )
+    }
+
+    /** Descarta la sugerencia de cliente. */
+    fun dismissCustomerSuggestion() {
+        _uiState.value = _uiState.value.copy(showCustomerSuggestion = false)
+    }
+
     /** Agrega el producto con los modificadores seleccionados al carrito.
      *  Si ya existe un CartItem con el mismo producto Y las mismas notas, incrementa cantidad.
-     *  Si las notas son distintas, agrega como línea separada. */
-    fun addProductWithModifiers(product: Product, selectedModifiers: List<String>, customNote: String) {
+     *  Si las notas son distintas, agrega como línea separada.
+     *  priceExtra se suma al precio base (p.ej. leche de avena/coco). */
+    fun addProductWithModifiers(
+        product: Product,
+        selectedModifiers: List<String>,
+        customNote: String,
+        priceExtra: BigDecimal = BigDecimal.ZERO
+    ) {
         val notes = buildString {
             if (selectedModifiers.isNotEmpty()) append(selectedModifiers.joinToString(", "))
             if (customNote.isNotBlank()) {
@@ -270,6 +330,7 @@ class CreateOrderViewModel @Inject constructor(
             }
         }.takeIf { it.isNotBlank() }
 
+        val unitPrice = product.price.add(priceExtra)
         val currentState = _uiState.value
         val existingItem = currentState.cartItems.find {
             it.product.id == product.id && it.notes == notes
@@ -281,7 +342,7 @@ class CreateOrderViewModel @Inject constructor(
                 else cartItem
             }
         } else {
-            currentState.cartItems + CartItem(product = product, quantity = 1, notes = notes)
+            currentState.cartItems + CartItem(product = product, quantity = 1, notes = notes, unitPrice = unitPrice)
         }
         _uiState.value = currentState.copy(cartItems = updatedCart, productForModifiers = null)
     }

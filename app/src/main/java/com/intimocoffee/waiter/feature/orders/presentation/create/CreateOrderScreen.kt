@@ -147,6 +147,16 @@ fun CreateOrderScreen(
             onSelect = viewModel::selectTable
         )
 
+        // 3.5 Sugerencia de cliente (mesa con órdenes activas)
+        val suggestedName = uiState.suggestedCustomerName
+        if (uiState.showCustomerSuggestion && suggestedName != null) {
+            CustomerSuggestionBanner(
+                suggestedName = suggestedName,
+                onAccept = viewModel::acceptCustomerSuggestion,
+                onDismiss = viewModel::dismissCustomerSuggestion
+            )
+        }
+
         // 4. Número de cliente + Buscar
         PhoneSearchRow(
             phone = uiState.customerPhone,
@@ -274,7 +284,10 @@ fun CreateOrderScreen(
     uiState.productForModifiers?.let { product ->
         ProductModifierSheet(
             product = product,
-            onAdd = { modifiers, note -> viewModel.addProductWithModifiers(product, modifiers, note) },
+            modifierOptions = uiState.modifierOptionsByCategory,
+            onAdd = { modifiers, note, priceExtra ->
+                viewModel.addProductWithModifiers(product, modifiers, note, priceExtra)
+            },
             onDismiss = viewModel::closeModifiers
         )
     }
@@ -845,5 +858,69 @@ private fun CartItemRow(
             fontWeight = FontWeight.SemiBold,
             color = color
         )
+    }
+}
+
+// ─── Banner de sugerencia de cliente ─────────────────────────────────────────
+@Composable
+private fun CustomerSuggestionBanner(
+    suggestedName: String,
+    onAccept: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        color = MaterialTheme.colorScheme.tertiaryContainer
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 12.dp, vertical = 6.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                modifier = Modifier.weight(1f)
+            ) {
+                Icon(
+                    Icons.Default.Person, null,
+                    Modifier.size(15.dp),
+                    tint = MaterialTheme.colorScheme.onTertiaryContainer
+                )
+                Text(
+                    "Mesa activa: $suggestedName",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onTertiaryContainer,
+                    fontWeight = FontWeight.Medium,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+            Row(horizontalArrangement = Arrangement.spacedBy(0.dp)) {
+                TextButton(
+                    onClick = onAccept,
+                    contentPadding = PaddingValues(horizontal = 8.dp)
+                ) {
+                    Text(
+                        "Usar",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.tertiary,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+                TextButton(
+                    onClick = onDismiss,
+                    contentPadding = PaddingValues(horizontal = 8.dp)
+                ) {
+                    Text(
+                        "No",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onTertiaryContainer.copy(alpha = 0.7f)
+                    )
+                }
+            }
+        }
     }
 }

@@ -63,7 +63,10 @@ interface IntimoCoffeeApiService {
     @GET("api/tables")
     suspend fun getAllTables(): Response<List<TableResponse>>
 
-    // --- Loyalty endpoints (corresponden al servidor Ktor de IntimoCoffeeApp) ---
+    @GET("api/modifier-options/all")
+    suspend fun getModifierOptions(): Response<List<ModifierOptionResponse>>
+
+    // --- Loyalty endpoints
 
     /** Busca un cliente por teléfono. Retorna 200+data si existe, 401 si no. */
     @POST("loyalty/customer/login")
@@ -258,4 +261,15 @@ data class TableResponse(
     @SerialName("zone") val zone: String,
     @SerialName("status") val status: String,
     @SerialName("isActive") val isActive: Boolean
+)
+
+@Serializable
+data class ModifierOptionResponse(
+    @SerialName("id") val id: String,
+    @SerialName("categoryId") val categoryId: String,
+    @SerialName("name") val name: String,
+    @SerialName("description") val description: String? = null,
+    @SerialName("priceExtra") val priceExtra: String = "0",
+    @SerialName("sortOrder") val sortOrder: Int = 0,
+    @SerialName("isActive") val isActive: Boolean = true
 )
