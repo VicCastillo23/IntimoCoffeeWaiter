@@ -1,12 +1,21 @@
 package com.intimocoffee.waiter.core.network
 
 import android.content.Context
+import android.net.ConnectivityManager
 import android.net.nsd.NsdManager
 import android.net.nsd.NsdServiceInfo
+import android.net.wifi.WifiManager
 import android.util.Log
 import dagger.hilt.android.qualifiers.ApplicationContext
-import kotlinx.coroutines.*
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.flow.asFlow
+import kotlinx.coroutines.flow.firstOrNull
+import kotlinx.coroutines.flow.flatMapMerge
+import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.logging.HttpLoggingInterceptor
@@ -16,6 +25,7 @@ import javax.inject.Inject
 import javax.inject.Singleton
 import kotlin.coroutines.resume
 
+@OptIn(ExperimentalCoroutinesApi::class)
 @Singleton
 class ServerDiscoveryService @Inject constructor(
     @ApplicationContext private val context: Context
@@ -47,8 +57,8 @@ class ServerDiscoveryService @Inject constructor(
             val nsdUrl = discoverViaNsd()
             if (nsdUrl != null) {
                 // Validate to avoid stale mDNS cache
-                val nsdIp = nsdUrl.removePrefix("http://").substringBefore(":")
-                val validated = testServer(nsdIp)
+                val nsdHost = hostFromResolvedServiceUrl(nsdUrl)
+                val validated = testServer(nsdHost)
                 if (validated != null) {
                     Log.i(TAG, "✅ NSD server validated: $validated")
                     return@withContext validated
@@ -56,7 +66,7 @@ class ServerDiscoveryService @Inject constructor(
                 Log.w(TAG, "⚠️ NSD found $nsdUrl but validation failed (stale cache), falling back to IP scan")
             }
 
-            // 2. Fallback: parallel IP scan on local subnet + adjacent (.0 ↔ .1)
+            // 2. Fallback: limited-concurrency scan + common LAN subnets (VPN-safe)
             val localIp = getLocalIpAddress()
             val localSubnet = localIp?.substringBeforeLast(".") ?: "192.168.1"
 
@@ -69,31 +79,30 @@ class ServerDiscoveryService @Inject constructor(
                 }
             } else null
 
-            val subnets = listOfNotNull(localSubnet, adjacentSubnet)
-            Log.w(TAG, "⚠️ NSD failed, scanning: ${subnets.joinToString(", ") { "$it.x" }}")
+            val subnets = buildList {
+                add(localSubnet)
+                adjacentSubnet?.let { add(it) }
+                add("192.168.1")
+                add("192.168.172") // Android emulator / ADB reverse common bridge range
+                add("192.168.0")
+                add("10.0.0")
+            }.distinct()
+            Log.w(TAG, "⚠️ NSD failed, scanning: ${subnets.joinToString(", ") { "$it.x" }} (localIp=$localIp)")
 
-            supervisorScope {
-                val deferreds = subnets.flatMap { subnet ->
-                    (1..254)
-                        .map { "$subnet.$it" }
-                        .filter { it != localIp }
-                        .map { ip -> async { withTimeoutOrNull(2_000L) { testServer(ip) } } }
-                }
-
-                val result = deferreds.awaitAll().firstOrNull { it != null }
-
-                if (result != null) {
-                    Log.i(TAG, "✅ Server found via IP scan at: $result")
-                } else {
-                    Log.w(TAG, "❌ Server not found in any subnet")
-                }
-                result
+            val result = scanSubnetsForServer(subnets, localIp)
+            if (result != null) {
+                Log.i(TAG, "✅ Server found via IP scan at: $result")
+            } else {
+                Log.w(TAG, "❌ Server not found in any subnet")
             }
+            result
         }
     }
 
     private suspend fun discoverViaNsd(): String? {
-        return withTimeoutOrNull(8_000L) {
+        val multicastLock = acquireMulticastLock()
+        return try {
+            withTimeoutOrNull(8_000L) {
             suspendCancellableCoroutine { cont ->
                 val nsd = context.getSystemService(Context.NSD_SERVICE) as NsdManager
                 var discoveryListener: NsdManager.DiscoveryListener? = null
@@ -104,7 +113,12 @@ class ServerDiscoveryService @Inject constructor(
                         if (cont.isActive) cont.resume(null)
                     }
                     override fun onServiceResolved(info: NsdServiceInfo) {
-                        val url = "http://${info.host.hostAddress}:${info.port}/"
+                        val host = info.host.hostAddress ?: run {
+                            if (cont.isActive) cont.resume(null)
+                            return
+                        }
+                        val hostInUrl = if (host.contains(':') && !host.startsWith('[')) "[$host]" else host
+                        val url = "http://$hostInUrl:${info.port}/"
                         Log.i(TAG, "NSD resolved: $url")
                         if (cont.isActive) cont.resume(url)
                     }
@@ -133,6 +147,61 @@ class ServerDiscoveryService @Inject constructor(
                     try { nsd.stopServiceDiscovery(discoveryListener) } catch (_: Exception) {}
                 }
             }
+            }
+        } finally {
+            releaseMulticastLock(multicastLock)
+        }
+    }
+
+    /**
+     * Android often drops mDNS unless the Wi‑Fi multicast lock is held during discovery.
+     */
+    @Suppress("DEPRECATION")
+    private fun acquireMulticastLock(): WifiManager.MulticastLock? {
+        val wifi = context.applicationContext.getSystemService(Context.WIFI_SERVICE) as? WifiManager
+            ?: return null
+        return try {
+            wifi.createMulticastLock("IntimoWaiter-NSD").apply {
+                setReferenceCounted(false)
+                acquire()
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "Could not acquire multicast lock (NSD may be unreliable)", e)
+            null
+        }
+    }
+
+    private fun releaseMulticastLock(lock: WifiManager.MulticastLock?) {
+        try {
+            if (lock?.isHeld == true) lock.release()
+        } catch (_: Exception) {}
+    }
+
+    private fun hostFromResolvedServiceUrl(url: String): String {
+        val trimmed = url.removePrefix("http://").removePrefix("https://").trimEnd('/')
+        if (trimmed.startsWith("[")) {
+            return trimmed.substringAfter('[').substringBefore(']')
+        }
+        val beforePort = trimmed.substringBeforeLast(':')
+        return beforePort.ifEmpty { trimmed }
+    }
+
+    private suspend fun scanSubnetsForServer(subnets: List<String>, localIp: String?): String? {
+        val ips = subnets.asSequence()
+            .flatMap { subnet -> (1..254).asSequence().map { "$subnet.$it" } }
+            .filter { it != localIp }
+            .distinct()
+            .toList()
+        if (ips.isEmpty()) return null
+        return withTimeoutOrNull(90_000) {
+            ips.asFlow()
+                .flatMapMerge(concurrency = 32) { ip ->
+                    flow {
+                        val r = withTimeoutOrNull(2_500L) { testServer(ip) }
+                        if (r != null) emit(r)
+                    }
+                }
+                .firstOrNull()
         }
     }
     
@@ -143,53 +212,43 @@ class ServerDiscoveryService @Inject constructor(
     private suspend fun testServer(ip: String): String? {
         return withContext(Dispatchers.IO) {
             try {
-                val baseUrl = "http://$ip:$SERVER_PORT"
+                val hostForUrl = if (ip.contains(':') && !ip.startsWith("[")) "[$ip]" else ip
+                val probeUrl = "http://$hostForUrl:$SERVER_PORT"
                 val request = Request.Builder()
-                    .url("$baseUrl/discover")
+                    .url("$probeUrl/discover")
                     .get()
                     .build()
 
                 quickHttpClient.newCall(request).execute().use { response ->
                     if (!response.isSuccessful) {
-                        Log.d(TAG, "❌ Server at $baseUrl responded with error on /discover: ${response.code}")
+                        Log.d(TAG, "❌ Server at $probeUrl responded with error on /discover: ${response.code}")
                         return@withContext null
                     }
 
                     val bodyString = response.body?.string()
                     if (bodyString.isNullOrBlank()) {
-                        Log.d(TAG, "❌ Empty body from $baseUrl/discover")
+                        Log.d(TAG, "❌ Empty body from $probeUrl/discover")
                         return@withContext null
                     }
 
                     return@withContext try {
                         val json = org.json.JSONObject(bodyString)
                         val serviceType = json.optString("serviceType")
-                        val announcedPort = json.optInt("port", SERVER_PORT)
-                        val announcedIp = json.optString("ipAddress", ip)
+                        val announcedPort = json.optInt("port", SERVER_PORT).takeIf { it in 1..65535 }
+                            ?: SERVER_PORT
 
                         if (serviceType == "INTIMO_COFFEE_MAIN") {
-                            // En escenario de emuladores con port forwarding, si contactamos a 10.0.2.2 o 127.0.0.1
-                            // debemos seguir usando ese host y NO la IP interna anunciada (10.0.2.x del emulador servidor).
-                            val originalHost = baseUrl.removePrefix("http://").substringBefore(":")
-                            val useOriginalHost = originalHost == "10.0.2.2" || originalHost == "127.0.0.1"
-
-                            val resolvedHost = if (useOriginalHost) {
-                                originalHost
-                            } else if (announcedIp.isNotBlank() && announcedIp != "unknown") {
-                                announcedIp
-                            } else {
-                                ip
-                            }
-
-                            val resolvedBaseUrl = "http://$resolvedHost:$announcedPort/"
-                            Log.d(TAG, "✅ Valid INTIMO_COFFEE_MAIN discovered at $resolvedBaseUrl (announced from $baseUrl)")
+                            // Always keep the host we successfully reached. The JSON "ipAddress" can point at
+                            // another interface (VPN, stale) and would break the client on a working LAN IP.
+                            val resolvedBaseUrl = "http://$hostForUrl:$announcedPort/"
+                            Log.d(TAG, "✅ Valid INTIMO_COFFEE_MAIN at $resolvedBaseUrl")
                             resolvedBaseUrl
                         } else {
-                            Log.d(TAG, "❌ Service type mismatch at $baseUrl: $serviceType")
+                            Log.d(TAG, "❌ Service type mismatch at $probeUrl: $serviceType")
                             null
                         }
                     } catch (e: Exception) {
-                        Log.d(TAG, "❌ Failed to parse /discover response from $baseUrl: ${e.message}")
+                        Log.d(TAG, "❌ Failed to parse /discover response from $probeUrl: ${e.message}")
                         null
                     }
                 }
@@ -201,14 +260,49 @@ class ServerDiscoveryService @Inject constructor(
     }
     
     /**
-     * Get local IP address of this device
+     * Prefer the IPv4 of the active (e.g. Wi‑Fi) network so subnet scans match the server's LAN.
      */
+    @Suppress("DEPRECATION")
     private fun getLocalIpAddress(): String? {
+        val fromActive = try {
+            val cm = context.applicationContext
+                .getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager
+            val network = cm?.activeNetwork
+            val lp = if (network != null) cm.getLinkProperties(network) else null
+            lp?.linkAddresses?.asSequence()
+                ?.mapNotNull { la ->
+                    val addr = la.address ?: return@mapNotNull null
+                    if (addr.isLoopbackAddress || addr !is java.net.Inet4Address) return@mapNotNull null
+                    addr.hostAddress?.takeIf { it.isNotBlank() }
+                }
+                ?.firstOrNull()
+        } catch (e: Exception) {
+            Log.w(TAG, "activeNetwork IPv4 lookup failed", e)
+            null
+        }
+        if (fromActive != null) return fromActive
+
         return try {
             NetworkInterface.getNetworkInterfaces().asSequence()
                 .flatMap { it.inetAddresses.asSequence() }
-                .find { !it.isLoopbackAddress && it is java.net.Inet4Address }
-                ?.hostAddress
+                .mapNotNull { addr ->
+                    if (addr.isLoopbackAddress || addr !is java.net.Inet4Address) return@mapNotNull null
+                    addr.hostAddress?.takeIf { it.isNotBlank() }
+                }
+                .sortedWith(
+                    compareBy(
+                        { host ->
+                            when {
+                                host.startsWith("192.168.") -> 0
+                                host.startsWith("10.") -> 1
+                                host.startsWith("172.") -> 2
+                                else -> 3
+                            }
+                        },
+                        { it }
+                    )
+                )
+                .firstOrNull()
         } catch (e: Exception) {
             Log.e(TAG, "Error getting local IP address", e)
             null

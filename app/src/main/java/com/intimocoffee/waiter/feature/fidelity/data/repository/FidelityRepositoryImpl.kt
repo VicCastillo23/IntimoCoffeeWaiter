@@ -73,6 +73,50 @@ class FidelityRepositoryImpl @Inject constructor(
         return dao.getByPhone(phone)?.toDomain()
     }
 
+    override suspend fun getByCustomerId(id: Long): FidelityCustomer? {
+        try {
+            val response = awsApi.getCustomerById(id)
+            return when {
+                response.isSuccessful && response.body()?.data != null -> {
+                    val serverData = response.body()!!.data!!
+                    val phone = serverData.phone
+                    val existing = dao.getByPhone(phone)
+                    if (existing != null) {
+                        dao.update(
+                            existing.copy(
+                                name = serverData.name,
+                                totalPoints = serverData.totalPoints,
+                                updatedAt = System.currentTimeMillis()
+                            )
+                        )
+                    } else {
+                        dao.insert(
+                            FidelityCustomerEntity(
+                                phone = phone,
+                                name = serverData.name,
+                                totalPoints = serverData.totalPoints
+                            )
+                        )
+                    }
+                    FidelityCustomer(
+                        id = serverData.id,
+                        phone = serverData.phone,
+                        name = serverData.name,
+                        totalPoints = serverData.totalPoints
+                    )
+                }
+                response.code() == 404 -> null
+                else -> {
+                    Log.w(TAG, "getByCustomerId HTTP ${response.code()}")
+                    null
+                }
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "getByCustomerId: ${e.message}")
+        }
+        return null
+    }
+
     /**
      * Suma puntos localmente y, si se provee [orderId], vincula la orden en el servidor.
      */

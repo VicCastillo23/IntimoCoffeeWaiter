@@ -7,6 +7,9 @@ import java.math.BigDecimal
 interface FidelityRepository {
     suspend fun getByPhone(phone: String): FidelityCustomer?
 
+    /** Cliente por ID (útil para QR antiguo con solo ID). */
+    suspend fun getByCustomerId(id: Long): FidelityCustomer?
+
     /**
      * Adds points to a customer's account based on the order total.
      * Rule: 1 point per $1,000 COP.

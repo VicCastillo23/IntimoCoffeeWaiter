@@ -14,6 +14,11 @@ import retrofit2.http.Path
  */
 interface AwsLoyaltyApiService {
 
+    @GET("loyalty/customer/{id}")
+    suspend fun getCustomerById(
+        @Path("id") id: Long
+    ): Response<AwsApiResponse<AwsLoyaltyCustomerData>>
+
     /** Busca un cliente por número de teléfono. Retorna 404 si no existe. */
     @GET("loyalty/customer/phone/{phone}")
     suspend fun getCustomerByPhone(

@@ -7,6 +7,8 @@ import com.intimocoffee.waiter.core.network.ModifierOptionResponse
 import com.intimocoffee.waiter.core.network.RemoteOrderService
 import com.intimocoffee.waiter.feature.auth.domain.repository.AuthRepository
 import com.intimocoffee.waiter.feature.fidelity.domain.model.FidelityCustomer
+import com.intimocoffee.waiter.core.util.LoyaltyQrParseResult
+import com.intimocoffee.waiter.core.util.LoyaltyQrParser
 import com.intimocoffee.waiter.feature.fidelity.domain.repository.FidelityRepository
 import com.intimocoffee.waiter.feature.inventory.domain.service.InventoryService
 import com.intimocoffee.waiter.feature.inventory.domain.service.StockAvailabilityReport
@@ -63,6 +65,7 @@ data class CreateOrderUiState(
     val customerName: String = "",
     val fidelityCustomer: FidelityCustomer? = null,
     val isFidelityLoading: Boolean = false,
+    val fidelityLookupError: String? = null,
     // Modificadores
     val productForModifiers: Product? = null,
     val modifierOptionsByCategory: Map<Long, List<ModifierOptionResponse>> = emptyMap(),
@@ -254,7 +257,7 @@ class CreateOrderViewModel @Inject constructor(
     }
 
     fun updatePhone(phone: String) {
-        _uiState.value = _uiState.value.copy(customerPhone = phone, fidelityCustomer = null)
+        _uiState.value = _uiState.value.copy(customerPhone = phone, fidelityCustomer = null, fidelityLookupError = null)
         if (phone.length >= 7) {
             fidelityLookupJob?.cancel()
             fidelityLookupJob = viewModelScope.launch {
@@ -274,11 +277,52 @@ class CreateOrderViewModel @Inject constructor(
         if (phone.length >= 7) {
             fidelityLookupJob?.cancel()
             fidelityLookupJob = viewModelScope.launch {
-                _uiState.value = _uiState.value.copy(isFidelityLoading = true)
+                _uiState.value = _uiState.value.copy(isFidelityLoading = true, fidelityLookupError = null)
                 val customer = fidelityRepository.getByPhone(phone)
                 _uiState.value = _uiState.value.copy(
                     fidelityCustomer = customer,
                     isFidelityLoading = false
+                )
+            }
+        }
+    }
+
+    /** QR de la app de fidelidad: rellena teléfono y busca cliente (o por ID legacy). */
+    fun applyLoyaltyQrScan(raw: String) {
+        viewModelScope.launch {
+            val parsed = LoyaltyQrParser.parse(raw)
+            if (parsed == null) {
+                _uiState.value = _uiState.value.copy(fidelityLookupError = "Código QR no válido")
+                return@launch
+            }
+            fidelityLookupJob?.cancel()
+            _uiState.value = _uiState.value.copy(isFidelityLoading = true, fidelityLookupError = null)
+            try {
+                when (parsed) {
+                    is LoyaltyQrParseResult.ByPhone -> {
+                        val digits = parsed.phoneDigits
+                        _uiState.value = _uiState.value.copy(customerPhone = digits)
+                        val customer = fidelityRepository.getByPhone(digits)
+                        _uiState.value = _uiState.value.copy(
+                            fidelityCustomer = customer,
+                            isFidelityLoading = false,
+                            fidelityLookupError = if (customer == null) "Cliente no encontrado" else null
+                        )
+                    }
+                    is LoyaltyQrParseResult.ByCustomerId -> {
+                        val customer = fidelityRepository.getByCustomerId(parsed.id)
+                        _uiState.value = _uiState.value.copy(
+                            customerPhone = customer?.phone ?: "",
+                            fidelityCustomer = customer,
+                            isFidelityLoading = false,
+                            fidelityLookupError = if (customer == null) "Cliente no encontrado" else null
+                        )
+                    }
+                }
+            } catch (_: Exception) {
+                _uiState.value = _uiState.value.copy(
+                    isFidelityLoading = false,
+                    fidelityLookupError = "Error al buscar cliente"
                 )
             }
         }

@@ -40,6 +40,7 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.compose.runtime.collectAsState
 import com.intimocoffee.waiter.feature.fidelity.domain.model.FidelityCustomer
 import com.intimocoffee.waiter.feature.orders.domain.model.CartItem
+import com.intimocoffee.waiter.feature.orders.presentation.components.LoyaltyQrScannerDialog
 import com.intimocoffee.waiter.feature.orders.presentation.components.ProductModifierSheet
 import com.intimocoffee.waiter.feature.orders.presentation.components.StockWarningsDialog
 import com.intimocoffee.waiter.feature.products.domain.model.Category
@@ -77,6 +78,17 @@ fun CreateOrderScreen(
 ) {
     val uiState by viewModel.uiState.collectAsState()
     val keyboardController = LocalSoftwareKeyboardController.current
+    var showLoyaltyQrScanner by remember { mutableStateOf(false) }
+
+    if (showLoyaltyQrScanner) {
+        LoyaltyQrScannerDialog(
+            onDismiss = { showLoyaltyQrScanner = false },
+            onBarcodeScanned = { raw ->
+                showLoyaltyQrScanner = false
+                viewModel.applyLoyaltyQrScan(raw)
+            }
+        )
+    }
 
     LaunchedEffect(uiState.orderCreated) {
         if (uiState.orderCreated) onNavigateBack()
@@ -161,11 +173,13 @@ fun CreateOrderScreen(
         PhoneSearchRow(
             phone = uiState.customerPhone,
             isLoading = uiState.isFidelityLoading,
+            lookupError = uiState.fidelityLookupError,
             onPhoneChange = viewModel::updatePhone,
             onSearch = {
                 keyboardController?.hide()
                 viewModel.triggerFidelitySearch()
-            }
+            },
+            onScanQrClick = { showLoyaltyQrScanner = true }
         )
 
         // 5. Card de fidelidad (animada)
@@ -371,52 +385,74 @@ private fun TableChipsRow(
 private fun PhoneSearchRow(
     phone: String,
     isLoading: Boolean,
+    lookupError: String?,
     onPhoneChange: (String) -> Unit,
-    onSearch: () -> Unit
+    onSearch: () -> Unit,
+    onScanQrClick: () -> Unit
 ) {
-    Row(
+    Column(
         modifier = Modifier
             .fillMaxWidth()
             .background(MaterialTheme.colorScheme.surface)
             .padding(horizontal = 12.dp, vertical = 6.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(8.dp)
+        verticalArrangement = Arrangement.spacedBy(4.dp)
     ) {
-        OutlinedTextField(
-            value = phone,
-            onValueChange = onPhoneChange,
-            label = { Text("Número Cliente") },
-            leadingIcon = {
-                Icon(
-                    Icons.Default.Phone, null,
-                    Modifier.size(18.dp),
-                    tint = MaterialTheme.colorScheme.primary
-                )
-            },
-            trailingIcon = {
-                if (isLoading) {
-                    CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
-                }
-            },
-            keyboardOptions = KeyboardOptions(
-                keyboardType = KeyboardType.Phone,
-                imeAction = ImeAction.Search
-            ),
-            keyboardActions = KeyboardActions(onSearch = { onSearch() }),
-            singleLine = true,
-            modifier = Modifier.weight(1f),
-            textStyle = MaterialTheme.typography.bodyMedium,
-            shape = RoundedCornerShape(10.dp)
-        )
-        Button(
-            onClick = onSearch,
-            shape = RoundedCornerShape(10.dp),
-            modifier = Modifier.height(52.dp),
-            contentPadding = PaddingValues(horizontal = 14.dp)
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            Icon(Icons.Default.Search, null, Modifier.size(18.dp))
-            Spacer(Modifier.width(4.dp))
-            Text("Buscar", style = MaterialTheme.typography.labelLarge)
+            OutlinedTextField(
+                value = phone,
+                onValueChange = onPhoneChange,
+                label = { Text("Número Cliente") },
+                leadingIcon = {
+                    Icon(
+                        Icons.Default.Phone, null,
+                        Modifier.size(18.dp),
+                        tint = MaterialTheme.colorScheme.primary
+                    )
+                },
+                trailingIcon = {
+                    if (isLoading) {
+                        CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
+                    }
+                },
+                keyboardOptions = KeyboardOptions(
+                    keyboardType = KeyboardType.Phone,
+                    imeAction = ImeAction.Search
+                ),
+                keyboardActions = KeyboardActions(onSearch = { onSearch() }),
+                singleLine = true,
+                modifier = Modifier.weight(1f),
+                textStyle = MaterialTheme.typography.bodyMedium,
+                shape = RoundedCornerShape(10.dp)
+            )
+            IconButton(
+                onClick = onScanQrClick,
+                enabled = !isLoading,
+                modifier = Modifier.size(48.dp)
+            ) {
+                Icon(Icons.Default.QrCodeScanner, contentDescription = "Escanear QR fidelidad")
+            }
+            Button(
+                onClick = onSearch,
+                shape = RoundedCornerShape(10.dp),
+                modifier = Modifier.height(52.dp),
+                contentPadding = PaddingValues(horizontal = 14.dp)
+            ) {
+                Icon(Icons.Default.Search, null, Modifier.size(18.dp))
+                Spacer(Modifier.width(4.dp))
+                Text("Buscar", style = MaterialTheme.typography.labelLarge)
+            }
+        }
+        lookupError?.let {
+            Text(
+                it,
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.error,
+                modifier = Modifier.padding(start = 4.dp)
+            )
         }
     }
 }
