@@ -9,7 +9,7 @@ import retrofit2.http.POST
 import retrofit2.http.Path
 
 /**
- * Retrofit interface para el servidor de Loyalty en AWS (http://34.232.40.232:8080).
+ * Retrofit interface para el servidor de Loyalty en AWS (https://api.cafeintimo.mx).
  * Endpoints espejo de AwsLoyaltyClient en IntimoCoffeeApp.
  */
 interface AwsLoyaltyApiService {
