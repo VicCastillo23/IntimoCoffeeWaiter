@@ -1,5 +1,6 @@
 package com.intimocoffee.waiter.core.network
 
+import com.intimocoffee.waiter.BuildConfig
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
@@ -62,7 +63,7 @@ object NetworkModule {
         okHttpClient: OkHttpClient,
         json: Json
     ): Retrofit = Retrofit.Builder()
-        .baseUrl("https://api.cafeintimo.mx/")
+        .baseUrl(loyaltyRetrofitBaseUrl())
         .client(okHttpClient)
         .addConverterFactory(json.asConverterFactory("application/json".toMediaType()))
         .build()
@@ -72,4 +73,9 @@ object NetworkModule {
     fun provideAwsLoyaltyApiService(
         @Named("aws") retrofit: Retrofit
     ): AwsLoyaltyApiService = retrofit.create(AwsLoyaltyApiService::class.java)
+
+    private fun loyaltyRetrofitBaseUrl(): String {
+        val u = BuildConfig.LOYALTY_API_BASE_URL.trim()
+        return if (u.endsWith("/")) u else "$u/"
+    }
 }

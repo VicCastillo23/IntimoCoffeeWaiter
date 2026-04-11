@@ -18,6 +18,16 @@ android {
         versionCode 1
         versionName "1.0.0"
 
+        /**
+         * IP del servidor IntimoCoffeeApp (tablet) si NSD/escaneo fallan.
+         * Definir en gradle.properties, p.ej.:
+         * INTIMO_MAIN_SERVER_URL=http://192.168.1.50:8080/
+         */
+        def mainServerProp = project.findProperty("INTIMO_MAIN_SERVER_URL") ?: ""
+        buildConfigField "String", "MAIN_SERVER_BASE_URL", "\"${mainServerProp.toString().replace("\\", "\\\\").replace("\"", "\\\"")}\""
+        /** API Loyalty en la nube (HTTPS). Mesero → Fidelity / QR usa Retrofit @Named("aws"). */
+        buildConfigField "String", "LOYALTY_API_BASE_URL", "\"https://api.cafeintimo.mx\""
+
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables {
             useSupportLibrary true
@@ -46,6 +56,7 @@ android {
     
     buildFeatures {
         compose true
+        buildConfig true
     }
     
     composeOptions {
