@@ -13,6 +13,7 @@ import com.intimocoffee.waiter.core.network.UserLoginResponse
 import com.intimocoffee.waiter.feature.auth.data.mapper.toDomainModel
 import com.intimocoffee.waiter.feature.auth.domain.model.User
 import com.intimocoffee.waiter.feature.auth.domain.model.UserRole
+import android.util.Log
 import com.intimocoffee.waiter.feature.auth.domain.repository.AuthRepository
 import kotlinx.coroutines.flow.first
 import kotlinx.serialization.encodeToString
@@ -47,6 +48,7 @@ class AuthRepositoryImpl @Inject constructor(
                 null
             }
         } catch (e: Exception) {
+            Log.e("AuthRepository", "login failed (¿servidor IntimoCoffeeApp en la misma WiFi?)", e)
             null
         }
     }

@@ -1,5 +1,6 @@
 package com.intimocoffee.waiter.core.network
 
+import android.os.Build
 import android.util.Log
 import kotlinx.serialization.json.Json
 import okhttp3.MediaType.Companion.toMediaType
@@ -18,12 +19,21 @@ class DynamicRetrofitProvider @Inject constructor(
     
     companion object {
         private const val TAG = "DynamicRetrofitProvider"
-        // Fallback base URL (emulator only — real devices discover via NSD/IP scan)
-        private const val DEFAULT_BASE_URL = "http://10.0.2.2:8080/"
+        /** Solo emulador Android; en teléfono real no sirve — hay que usar NSD, escaneo o INTIMO_MAIN_SERVER_URL. */
+        private const val EMULATOR_LOOPBACK_BASE_URL = "http://10.0.2.2:8080/"
+    }
+
+    private fun isLikelyEmulator(): Boolean {
+        return Build.FINGERPRINT.startsWith("generic")
+            || Build.FINGERPRINT.startsWith("unknown")
+            || Build.MODEL.contains("Emulator")
+            || Build.MODEL.contains("Android SDK built for x86")
+            || Build.MANUFACTURER.contains("Genymotion")
     }
     
-    @Volatile private var currentBaseUrl: String = DEFAULT_BASE_URL
-    @Volatile private var apiService: IntimoCoffeeApiService = buildService(DEFAULT_BASE_URL)
+    @Volatile private var currentBaseUrl: String = EMULATOR_LOOPBACK_BASE_URL
+    @Volatile private var apiService: IntimoCoffeeApiService =
+        buildService(EMULATOR_LOOPBACK_BASE_URL)
     
     /**
      * Returns the cached API service (uses DEFAULT_BASE_URL until discoverAndRefreshService() runs).
@@ -36,12 +46,23 @@ class DynamicRetrofitProvider @Inject constructor(
     suspend fun discoverAndRefreshService(): IntimoCoffeeApiService {
         Log.i(TAG, "🔍 Discovering server...")
         val discoveredUrl = serverDiscoveryService.discoverMainServer()
-        val baseUrl = if (discoveredUrl != null) {
-            Log.i(TAG, "✅ Discovered server: $discoveredUrl")
-            discoveredUrl
-        } else {
-            Log.w(TAG, "⚠️ Discovery failed, using default: $DEFAULT_BASE_URL")
-            DEFAULT_BASE_URL
+        val baseUrl = when {
+            discoveredUrl != null -> {
+                Log.i(TAG, "✅ Discovered server: $discoveredUrl")
+                discoveredUrl
+            }
+            isLikelyEmulator() -> {
+                Log.w(TAG, "⚠️ Discovery failed, using emulator host: $EMULATOR_LOOPBACK_BASE_URL")
+                EMULATOR_LOOPBACK_BASE_URL
+            }
+            else -> {
+                Log.e(
+                    TAG,
+                    "❌ Discovery failed on dispositivo físico. Añade en gradle.properties la IP de la tablet: " +
+                        "INTIMO_MAIN_SERVER_URL=http://192.168.x.x:8080/ y Sync + rebuild."
+                )
+                EMULATOR_LOOPBACK_BASE_URL
+            }
         }
         synchronized(this) {
             currentBaseUrl = baseUrl

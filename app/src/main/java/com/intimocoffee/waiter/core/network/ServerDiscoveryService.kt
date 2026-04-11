@@ -2,6 +2,7 @@ package com.intimocoffee.waiter.core.network
 
 import android.content.Context
 import android.net.ConnectivityManager
+import android.net.Uri
 import android.net.nsd.NsdManager
 import android.net.nsd.NsdServiceInfo
 import android.net.wifi.WifiManager
@@ -21,6 +22,7 @@ import okhttp3.Request
 import okhttp3.logging.HttpLoggingInterceptor
 import java.net.NetworkInterface
 import java.util.concurrent.TimeUnit
+import com.intimocoffee.waiter.BuildConfig
 import javax.inject.Inject
 import javax.inject.Singleton
 import kotlin.coroutines.resume
@@ -52,13 +54,27 @@ class ServerDiscoveryService @Inject constructor(
      */
     suspend fun discoverMainServer(): String? {
         return withContext(Dispatchers.IO) {
+            // 0. URL fija (gradle.properties → BuildConfig) — útil cuando NSD/escaneo fallan en la red
+            val configured = BuildConfig.MAIN_SERVER_BASE_URL.trim()
+            if (configured.isNotEmpty()) {
+                Log.i(TAG, "🔧 Trying MAIN_SERVER_BASE_URL from BuildConfig: $configured")
+                val validated = testDiscoverAtBaseUrl(configured)
+                if (validated != null) {
+                    Log.i(TAG, "✅ Using configured main server: $validated")
+                    return@withContext validated
+                }
+                Log.w(
+                    TAG,
+                    "⚠️ MAIN_SERVER_BASE_URL no responde en /discover; probando NSD y escaneo…"
+                )
+            }
+
             // 1. NSD/mDNS (instant, no IP scanning)
             Log.i(TAG, "🔍 Starting NSD discovery...")
             val nsdUrl = discoverViaNsd()
             if (nsdUrl != null) {
-                // Validate to avoid stale mDNS cache
-                val nsdHost = hostFromResolvedServiceUrl(nsdUrl)
-                val validated = testServer(nsdHost)
+                // Validate to avoid stale mDNS cache (conserva host:puerto del NSD)
+                val validated = testDiscoverAtBaseUrl(nsdUrl)
                 if (validated != null) {
                     Log.i(TAG, "✅ NSD server validated: $validated")
                     return@withContext validated
@@ -85,7 +101,10 @@ class ServerDiscoveryService @Inject constructor(
                 add("192.168.1")
                 add("192.168.172") // Android emulator / ADB reverse common bridge range
                 add("192.168.0")
+                add("192.168.50")
+                add("192.168.86")
                 add("10.0.0")
+                add("172.20.10") // hotspot iPhone
             }.distinct()
             Log.w(TAG, "⚠️ NSD failed, scanning: ${subnets.joinToString(", ") { "$it.x" }} (localIp=$localIp)")
 
@@ -177,15 +196,6 @@ class ServerDiscoveryService @Inject constructor(
         } catch (_: Exception) {}
     }
 
-    private fun hostFromResolvedServiceUrl(url: String): String {
-        val trimmed = url.removePrefix("http://").removePrefix("https://").trimEnd('/')
-        if (trimmed.startsWith("[")) {
-            return trimmed.substringAfter('[').substringBefore(']')
-        }
-        val beforePort = trimmed.substringBeforeLast(':')
-        return beforePort.ifEmpty { trimmed }
-    }
-
     private suspend fun scanSubnetsForServer(subnets: List<String>, localIp: String?): String? {
         val ips = subnets.asSequence()
             .flatMap { subnet -> (1..254).asSequence().map { "$subnet.$it" } }
@@ -205,15 +215,24 @@ class ServerDiscoveryService @Inject constructor(
         }
     }
     
+    /** Valida `http://host:port/discover` (INTIMO_COFFEE_MAIN). */
+    private suspend fun testDiscoverAtBaseUrl(baseUrl: String): String? {
+        val normalized = baseUrl.trim().ifEmpty { return null }
+        val uri = Uri.parse(normalized)
+        val host = uri.host ?: return null
+        val port = if (uri.port != -1) uri.port else SERVER_PORT
+        return testServer(host, port)
+    }
+
     /**
      * Test if a server is running at the given IP using the /discover endpoint
      * exposed by IntimoCoffeeApp's HttpServer and validate it's the main server.
      */
-    private suspend fun testServer(ip: String): String? {
+    private suspend fun testServer(ip: String, port: Int = SERVER_PORT): String? {
         return withContext(Dispatchers.IO) {
             try {
                 val hostForUrl = if (ip.contains(':') && !ip.startsWith("[")) "[$ip]" else ip
-                val probeUrl = "http://$hostForUrl:$SERVER_PORT"
+                val probeUrl = "http://$hostForUrl:$port"
                 val request = Request.Builder()
                     .url("$probeUrl/discover")
                     .get()
@@ -234,13 +253,10 @@ class ServerDiscoveryService @Inject constructor(
                     return@withContext try {
                         val json = org.json.JSONObject(bodyString)
                         val serviceType = json.optString("serviceType")
-                        val announcedPort = json.optInt("port", SERVER_PORT).takeIf { it in 1..65535 }
-                            ?: SERVER_PORT
 
                         if (serviceType == "INTIMO_COFFEE_MAIN") {
-                            // Always keep the host we successfully reached. The JSON "ipAddress" can point at
-                            // another interface (VPN, stale) and would break the client on a working LAN IP.
-                            val resolvedBaseUrl = "http://$hostForUrl:$announcedPort/"
+                            // Siempre el host:puerto con el que respondió /discover (JSON ipAddress puede estar mal si hay VPN).
+                            val resolvedBaseUrl = "http://$hostForUrl:$port/"
                             Log.d(TAG, "✅ Valid INTIMO_COFFEE_MAIN at $resolvedBaseUrl")
                             resolvedBaseUrl
                         } else {

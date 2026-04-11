@@ -18,66 +18,30 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.unit.dp
 import com.intimocoffee.waiter.core.network.ModifierOptionResponse
+import com.intimocoffee.waiter.feature.orders.presentation.modifiers.OrderModifiersCatalog
+import com.intimocoffee.waiter.feature.orders.presentation.modifiers.PricedModifier
 import com.intimocoffee.waiter.feature.products.domain.model.Product
 import java.math.BigDecimal
 import java.text.NumberFormat
 import java.util.*
 
-// ─── Category groups ──────────────────────────────────────────────────────────
-private val CALIENTES_IDS    = setOf(1L, 2L, 3L)
+// ─── Category groups (hoja) ─────────────────────────────────────────────────
 private val ESPECIALIDAD_IDS = setOf(4L, 5L, 6L)
-private val FRIOS_IDS        = setOf(7L, 8L, 9L, 10L)
-private val TISANAS_IDS      = setOf(11L, 12L, 13L)
-private val POSTRES_IDS      = setOf(14L)
-private val SALADOS_IDS      = setOf(15L, 16L, 17L)
+private val FRIOS_IDS = setOf(7L, 8L, 9L, 10L)
+private val TISANAS_IDS = setOf(11L, 12L, 13L)
 
-private fun staticMultiFor(catId: Long): List<String> = when (catId) {
-    in CALIENTES_IDS    -> listOf("Crema Batida")
-    in ESPECIALIDAD_IDS -> emptyList()
-    in FRIOS_IDS        -> listOf("Crema Batida")
-    in TISANAS_IDS      -> emptyList()
-    in POSTRES_IDS      -> listOf(
-        "Helado extra", "Crema batida", "Chocolate extra",
-        "Mermelada extra", "Miel de maple extra"
-    )
-    in SALADOS_IDS      -> listOf(
-        "Salsa extra", "Sin cebolla", "Sin mayonesa", "Sin picante",
-        "Sin queso", "Sin sal", "Con extra queso",
-        "Vinagreta extra", "Queso amarillo extra"
-    )
-    else                -> listOf("Para llevar", "Para aquí")
-}
-
-private fun staticSingleFor(catId: Long): List<String>? = when (catId) {
-    in TISANAS_IDS -> listOf("Caliente", "Tibia", "Filtrada", "Con frutos")
-    else           -> null
-}
-
-// ─── Colors by category ───────────────────────────────────────────────────────
 private val catColorMap = mapOf(
-    1L  to Color(0xFF8D4925),
-    2L  to Color(0xFF8D4925),
-    3L  to Color(0xFF8D4925),
-    4L  to Color(0xFF6D4C41),
-    5L  to Color(0xFF455A64),
-    6L  to Color(0xFF546E7A),
-    7L  to Color(0xFF1E88E5),
-    8L  to Color(0xFF1565C0),
-    9L  to Color(0xFF0288D1),
-    10L to Color(0xFF039BE5),
-    11L to Color(0xFF43A047),
-    12L to Color(0xFF2E7D32),
-    13L to Color(0xFF388E3C),
-    14L to Color(0xFFF9A825),
-    15L to Color(0xFFFF6F00),
-    16L to Color(0xFFE65100),
-    17L to Color(0xFFBF360C),
+    1L to Color(0xFF8D4925), 2L to Color(0xFF8D4925), 3L to Color(0xFF8D4925),
+    4L to Color(0xFF6D4C41), 5L to Color(0xFF455A64), 6L to Color(0xFF546E7A),
+    7L to Color(0xFF1E88E5), 8L to Color(0xFF1565C0), 9L to Color(0xFF0288D1),
+    10L to Color(0xFF039BE5), 11L to Color(0xFF43A047), 12L to Color(0xFF2E7D32),
+    13L to Color(0xFF388E3C), 14L to Color(0xFFF9A825),
+    15L to Color(0xFFFF6F00), 16L to Color(0xFFE65100), 17L to Color(0xFFBF360C),
     18L to Color(0xFF757575),
 )
 private val defaultCatColor = Color(0xFF757575)
 private fun catColor(id: Long): Color = catColorMap[id] ?: defaultCatColor
 
-// ─── Main sheet ───────────────────────────────────────────────────────────────
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ProductModifierSheet(
@@ -86,7 +50,7 @@ fun ProductModifierSheet(
     onAdd: (modifiers: List<String>, note: String, priceExtra: BigDecimal) -> Unit,
     onDismiss: () -> Unit
 ) {
-    val fmt = NumberFormat.getCurrencyInstance(Locale("es", "CO"))
+    val fmt = NumberFormat.getCurrencyInstance(Locale("es", "MX"))
     val catId = product.categoryId
     val color = catColor(catId)
     val dynamicOptions = modifierOptions[catId] ?: emptyList()
@@ -95,24 +59,26 @@ fun ProductModifierSheet(
     val showDynamicPrices = catId in FRIOS_IDS
     val dynamicSectionTitle = when (catId) {
         in ESPECIALIDAD_IDS -> "Origen del café"
-        in FRIOS_IDS        -> "Tipo de leche"
-        else                -> "Opciones"
+        in FRIOS_IDS -> "Tipo de leche"
+        else -> "Opciones"
     }
 
-    val staticSingleOptions = staticSingleFor(catId)
-    val staticMultiOptions  = staticMultiFor(catId)
+    val pricedSections = remember(catId) { OrderModifiersCatalog.staticPricedSectionsForLeafCategory(catId) }
+    val showTemperaturaTisana = catId in TISANAS_IDS
 
-    // State
-    val multiSelected   = remember { mutableStateListOf<String>() }
-    var staticSingle    by remember { mutableStateOf<String?>(null) }
-    var dynamicSelected by remember { mutableStateOf<ModifierOptionResponse?>(null) }
-    var customNote      by remember { mutableStateOf("") }
+    var staticSingle by remember(product.id) { mutableStateOf<String?>(null) }
+    var dynamicSelected by remember(product.id) { mutableStateOf<ModifierOptionResponse?>(null) }
+    var customNote by remember(product.id) { mutableStateOf("") }
+    val selectedPriced = remember(product.id) { mutableStateListOf<String>() }
 
-    // Live price display
-    val displayPrice = product.price.add(
-        if (showDynamicPrices) dynamicSelected?.priceExtra?.toBigDecimalOrNull() ?: BigDecimal.ZERO
-        else BigDecimal.ZERO
-    )
+    val staticExtra = remember(selectedPriced.toList(), pricedSections) {
+        OrderModifiersCatalog.totalForSelectedLabels(selectedPriced.toSet())
+    }
+    val dynamicExtra = if (showDynamicPrices)
+        dynamicSelected?.priceExtra?.toBigDecimalOrNull() ?: BigDecimal.ZERO
+    else BigDecimal.ZERO
+
+    val displayPrice = product.price.add(staticExtra).add(dynamicExtra)
 
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
 
@@ -128,7 +94,6 @@ fun ProductModifierSheet(
                 .verticalScroll(rememberScrollState())
                 .padding(bottom = 24.dp)
         ) {
-            // ── Header ──────────────────────────────────────────────────────
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -156,10 +121,7 @@ fun ProductModifierSheet(
                         color = color
                     )
                 }
-                Surface(
-                    shape = RoundedCornerShape(12.dp),
-                    color = color.copy(0.10f)
-                ) {
+                Surface(shape = RoundedCornerShape(12.dp), color = color.copy(0.10f)) {
                     Text(
                         text = "Personalizar",
                         modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
@@ -172,11 +134,10 @@ fun ProductModifierSheet(
 
             Divider(color = MaterialTheme.colorScheme.outlineVariant.copy(0.4f))
 
-            // ── Temperatura (Tisanas/Té) — static single-select ──────────
-            staticSingleOptions?.let { temps ->
-                SectionHeader(title = "Temperatura", color = color)
+            if (showTemperaturaTisana) {
+                SectionHeader(title = "Temperatura")
                 SingleSelectChips(
-                    options = temps,
+                    options = OrderModifiersCatalog.temperaturaTisanaOptions(),
                     selected = staticSingle,
                     onSelect = { staticSingle = if (staticSingle == it) null else it },
                     categoryColor = color,
@@ -184,9 +145,8 @@ fun ProductModifierSheet(
                 )
             }
 
-            // ── Origen / Tipo de leche — dynamic single-select ───────────
             if (showDynamicSingle) {
-                SectionHeader(title = dynamicSectionTitle, color = color)
+                SectionHeader(title = dynamicSectionTitle)
                 DynamicSingleSelectChips(
                     options = dynamicOptions,
                     selected = dynamicSelected,
@@ -198,27 +158,23 @@ fun ProductModifierSheet(
                 )
             }
 
-            // ── Modificadores estáticos — multi-select ───────────────────
-            if (staticMultiOptions.isNotEmpty()) {
-                SectionHeader(title = "Modificadores", color = color)
-                FlowChips(
-                    modifiers = staticMultiOptions,
-                    selected = multiSelected,
-                    onToggle = {
-                        if (multiSelected.contains(it)) multiSelected.remove(it) else multiSelected.add(it)
-                    },
+            pricedSections.forEach { (title, items) ->
+                SectionHeader(title = title)
+                PricedMultiChips(
+                    items = items,
+                    selected = selectedPriced,
                     categoryColor = color,
+                    formatter = fmt,
                     modifier = Modifier.padding(horizontal = 16.dp)
                 )
             }
 
-            // ── Nota libre ───────────────────────────────────────────────
-            SectionHeader(title = "Nota adicional", color = color)
+            SectionHeader(title = "Nota adicional")
             OutlinedTextField(
                 value = customNote,
                 onValueChange = { if (it.length <= 120) customNote = it },
                 placeholder = {
-                    Text("Ej: sin azúcar, para llevar\u2026", style = MaterialTheme.typography.bodyMedium)
+                    Text("Ej: sin azúcar, indicaciones extra…", style = MaterialTheme.typography.bodyMedium)
                 },
                 modifier = Modifier
                     .fillMaxWidth()
@@ -233,9 +189,8 @@ fun ProductModifierSheet(
                 }
             )
 
-            // ── Preview de selección ─────────────────────────────────────
             val allSelected = buildList {
-                addAll(multiSelected)
+                addAll(selectedPriced)
                 staticSingle?.let { add(it) }
                 dynamicSelected?.let { add(it.name) }
             }
@@ -243,7 +198,7 @@ fun ProductModifierSheet(
                 val preview = buildString {
                     if (allSelected.isNotEmpty()) append(allSelected.joinToString(", "))
                     if (customNote.isNotBlank()) {
-                        if (allSelected.isNotEmpty()) append(" \u2014 ")
+                        if (allSelected.isNotEmpty()) append(" — ")
                         append(customNote.trim())
                     }
                 }
@@ -255,7 +210,7 @@ fun ProductModifierSheet(
                     color = color.copy(0.08f)
                 ) {
                     Text(
-                        text = "\uD83D\uDCDD $preview",
+                        text = "📝 $preview",
                         modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
                         style = MaterialTheme.typography.bodySmall,
                         color = color
@@ -265,7 +220,6 @@ fun ProductModifierSheet(
                 Spacer(Modifier.height(16.dp))
             }
 
-            // ── Botones ──────────────────────────────────────────────────
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -274,28 +228,22 @@ fun ProductModifierSheet(
             ) {
                 OutlinedButton(
                     onClick = onDismiss,
-                    modifier = Modifier
-                        .weight(1f)
-                        .height(50.dp),
+                    modifier = Modifier.weight(1f).height(50.dp),
                     shape = RoundedCornerShape(12.dp)
                 ) {
                     Text("Cancelar")
                 }
                 Button(
                     onClick = {
-                        val finalModifiers = buildList<String> {
-                            addAll(multiSelected)
+                        val finalModifiers = buildList {
+                            addAll(selectedPriced)
                             staticSingle?.let { add(it) }
                             dynamicSelected?.let { add(it.name) }
                         }.distinct()
-                        val priceExtra = if (showDynamicPrices)
-                            dynamicSelected?.priceExtra?.toBigDecimalOrNull() ?: BigDecimal.ZERO
-                        else BigDecimal.ZERO
+                        val priceExtra = staticExtra.add(dynamicExtra)
                         onAdd(finalModifiers, customNote, priceExtra)
                     },
-                    modifier = Modifier
-                        .weight(2f)
-                        .height(50.dp),
+                    modifier = Modifier.weight(2f).height(50.dp),
                     shape = RoundedCornerShape(12.dp),
                     colors = ButtonDefaults.buttonColors(containerColor = color)
                 ) {
@@ -308,9 +256,8 @@ fun ProductModifierSheet(
     }
 }
 
-// ─── Section header ───────────────────────────────────────────────────────────
 @Composable
-private fun SectionHeader(title: String, color: Color) {
+private fun SectionHeader(title: String) {
     Text(
         text = title,
         style = MaterialTheme.typography.titleSmall,
@@ -320,7 +267,6 @@ private fun SectionHeader(title: String, color: Color) {
     )
 }
 
-// ─── Static single-select chips ──────────────────────────────────────────────
 @Composable
 private fun SingleSelectChips(
     options: List<String>,
@@ -346,7 +292,6 @@ private fun SingleSelectChips(
     }
 }
 
-// ─── Dynamic single-select chips (with optional price) ───────────────────────
 @Composable
 private fun DynamicSingleSelectChips(
     options: List<ModifierOptionResponse>,
@@ -377,25 +322,29 @@ private fun DynamicSingleSelectChips(
     }
 }
 
-// ─── Multi-select chips ───────────────────────────────────────────────────────
 @Composable
-private fun FlowChips(
-    modifiers: List<String>,
-    selected: List<String>,
-    onToggle: (String) -> Unit,
+private fun PricedMultiChips(
+    items: List<PricedModifier>,
+    selected: MutableList<String>,
     categoryColor: Color,
+    formatter: NumberFormat,
     modifier: Modifier = Modifier
 ) {
-    val rows = modifiers.chunked(3)
+    val rows = items.chunked(3)
     Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(8.dp)) {
         rows.forEach { rowItems ->
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                rowItems.forEach { mod ->
+                rowItems.forEach { pm ->
+                    val suffix = if (pm.price > BigDecimal.ZERO) " +${formatter.format(pm.price)}" else ""
+                    val label = "${pm.label}$suffix"
+                    val isOn = selected.contains(pm.label)
                     ModifierChip(
-                        label = mod,
-                        isSelected = selected.contains(mod),
+                        label = label,
+                        isSelected = isOn,
                         color = categoryColor,
-                        onClick = { onToggle(mod) },
+                        onClick = {
+                            if (isOn) selected.remove(pm.label) else selected.add(pm.label)
+                        },
                         showCheckmark = true
                     )
                 }
@@ -404,7 +353,6 @@ private fun FlowChips(
     }
 }
 
-// ─── Individual chip ──────────────────────────────────────────────────────────
 @Composable
 private fun ModifierChip(
     label: String,
@@ -428,11 +376,7 @@ private fun ModifierChip(
             horizontalArrangement = Arrangement.spacedBy(4.dp)
         ) {
             if (showCheckmark && isSelected) {
-                Icon(
-                    Icons.Default.Check, null,
-                    Modifier.size(13.dp),
-                    tint = Color.White
-                )
+                Icon(Icons.Default.Check, null, Modifier.size(13.dp), tint = Color.White)
             }
             Text(
                 text = label,
