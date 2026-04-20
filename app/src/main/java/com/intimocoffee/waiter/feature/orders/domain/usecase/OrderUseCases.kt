@@ -145,21 +145,9 @@ class GetOrderDetailsUseCase @Inject constructor(
 }
 
 class AddItemToOrderUseCase @Inject constructor(
-    private val orderRepository: OrderRepository
+    private val remoteOrderService: RemoteOrderService,
 ) {
     suspend operator fun invoke(orderId: Long, item: OrderItem): Result<Boolean> {
-        return try {
-            val order = orderRepository.getOrderById(orderId)
-                ?: return Result.failure(Exception("Orden no encontrada"))
-
-            if (order.status != OrderStatus.PENDING) {
-                return Result.failure(Exception("Solo se pueden agregar productos a órdenes pendientes"))
-            }
-
-            val success = orderRepository.addItemToOrder(orderId, item)
-            Result.success(success)
-        } catch (e: Exception) {
-            Result.failure(e)
-        }
+        return remoteOrderService.addOrderItemOnServer(orderId, item)
     }
 }

@@ -104,12 +104,24 @@ fun CreateOrderScreen(
             title = {
                 Column {
                     Text("Nueva Orden", fontWeight = FontWeight.Bold)
-                    uiState.selectedTable?.let { t ->
-                        Text(
-                            "Mesa ${t.displayName} seleccionada",
-                            style = MaterialTheme.typography.labelMedium,
-                            color = MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.80f)
-                        )
+                    when {
+                        uiState.orderPlacementMode == OrderPlacementMode.TAKEOUT ->
+                            Text(
+                                if (uiState.takeoutCustomerName.isNotBlank())
+                                    "Para llevar — ${uiState.takeoutCustomerName.trim()}"
+                                else
+                                    "Para llevar (indique nombre abajo)",
+                                style = MaterialTheme.typography.labelMedium,
+                                color = MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.88f)
+                            )
+                        uiState.selectedTable != null -> {
+                            val t = uiState.selectedTable!!
+                            Text(
+                                "Mesa ${t.displayName} seleccionada",
+                                style = MaterialTheme.typography.labelMedium,
+                                color = MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.80f)
+                            )
+                        }
                     }
                 }
             },
@@ -152,16 +164,25 @@ fun CreateOrderScreen(
             }
         }
 
-        // 3. Selector de mesa
-        TableChipsRow(
-            tables = uiState.availableTables,
-            selectedTable = uiState.selectedTable,
-            onSelect = viewModel::selectTable
+        // 3. Modo en mesa / para llevar + mesa o nombre
+        OrderPlacementRow(
+            mode = uiState.orderPlacementMode,
+            takeoutName = uiState.takeoutCustomerName,
+            onModeChange = viewModel::setOrderPlacementMode,
+            onTakeoutNameChange = viewModel::setTakeoutCustomerName
         )
+        if (uiState.orderPlacementMode == OrderPlacementMode.TABLE) {
+            TableChipsRow(
+                tables = uiState.availableTables,
+                selectedTable = uiState.selectedTable,
+                onSelect = viewModel::selectTable
+            )
+        }
 
         // 3.5 Sugerencia de cliente (mesa con órdenes activas)
         val suggestedName = uiState.suggestedCustomerName
-        if (uiState.showCustomerSuggestion && suggestedName != null) {
+        if (uiState.orderPlacementMode == OrderPlacementMode.TABLE &&
+            uiState.showCustomerSuggestion && suggestedName != null) {
             CustomerSuggestionBanner(
                 suggestedName = suggestedName,
                 onAccept = viewModel::acceptCustomerSuggestion,
@@ -277,8 +298,14 @@ fun CreateOrderScreen(
         // 8. Panel "Resumen de Orden" (parte inferior fija)
         CartSummaryPanel(
             cartItems = uiState.cartItems,
+            subtotalNet = uiState.calculatedSubtotal,
+            taxIncluded = uiState.calculatedTax,
             total = uiState.calculatedTotal,
-            isCreateEnabled = uiState.selectedTable != null && uiState.cartItems.isNotEmpty(),
+            isCreateEnabled = uiState.cartItems.isNotEmpty() &&
+                when (uiState.orderPlacementMode) {
+                    OrderPlacementMode.TABLE -> uiState.selectedTable != null
+                    OrderPlacementMode.TAKEOUT -> uiState.takeoutCustomerName.isNotBlank()
+                },
             onUpdateQuantity = viewModel::updateCartItemQuantity,
             onRemoveItem = viewModel::removeCartItem,
             onCreateOrder = viewModel::createOrder
@@ -299,11 +326,63 @@ fun CreateOrderScreen(
         ProductModifierSheet(
             product = product,
             modifierOptions = uiState.modifierOptionsByCategory,
+            pricedSections = uiState.pricedModifierSectionsByCategory[product.categoryId] ?: emptyList(),
+            temperaturaOptions = uiState.temperaturaOptionsByCategory[product.categoryId] ?: emptyList(),
             onAdd = { modifiers, note, priceExtra ->
                 viewModel.addProductWithModifiers(product, modifiers, note, priceExtra)
             },
             onDismiss = viewModel::closeModifiers
         )
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun OrderPlacementRow(
+    mode: OrderPlacementMode,
+    takeoutName: String,
+    onModeChange: (OrderPlacementMode) -> Unit,
+    onTakeoutNameChange: (String) -> Unit,
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f))
+            .padding(horizontal = 12.dp, vertical = 8.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            FilterChip(
+                selected = mode == OrderPlacementMode.TABLE,
+                onClick = { onModeChange(OrderPlacementMode.TABLE) },
+                label = { Text("En mesa") },
+                leadingIcon = if (mode == OrderPlacementMode.TABLE) {
+                    { Icon(Icons.Default.Check, null, Modifier.size(18.dp)) }
+                } else null
+            )
+            FilterChip(
+                selected = mode == OrderPlacementMode.TAKEOUT,
+                onClick = { onModeChange(OrderPlacementMode.TAKEOUT) },
+                label = { Text("Para llevar") },
+                leadingIcon = if (mode == OrderPlacementMode.TAKEOUT) {
+                    { Icon(Icons.Default.Check, null, Modifier.size(18.dp)) }
+                } else null
+            )
+        }
+        if (mode == OrderPlacementMode.TAKEOUT) {
+            OutlinedTextField(
+                value = takeoutName,
+                onValueChange = onTakeoutNameChange,
+                modifier = Modifier.fillMaxWidth(),
+                singleLine = true,
+                label = { Text("Nombre (orden para llevar)") },
+                placeholder = { Text("Ej. Ana / Pedido 2") },
+                shape = RoundedCornerShape(12.dp)
+            )
+        }
     }
 }
 
@@ -697,6 +776,8 @@ private fun ProductCard(
 @Composable
 private fun CartSummaryPanel(
     cartItems: List<CartItem>,
+    subtotalNet: BigDecimal,
+    taxIncluded: BigDecimal,
     total: BigDecimal,
     isCreateEnabled: Boolean,
     onUpdateQuantity: (Long, Int) -> Unit,
@@ -759,11 +840,32 @@ private fun CartSummaryPanel(
                     }
                 }
                 if (hasItems) {
+                    Column(horizontalAlignment = Alignment.End) {
+                        Text(
+                            fmt.format(total),
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.ExtraBold,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                    }
+                }
+            }
+
+            if (hasItems) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 14.dp, vertical = 0.dp)
+                ) {
                     Text(
-                        fmt.format(total),
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.ExtraBold,
-                        color = MaterialTheme.colorScheme.primary
+                        "Subtotal (sin IVA): ${fmt.format(subtotalNet)}",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Text(
+                        "IVA incluido en precio: ${fmt.format(taxIncluded)}",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
             }

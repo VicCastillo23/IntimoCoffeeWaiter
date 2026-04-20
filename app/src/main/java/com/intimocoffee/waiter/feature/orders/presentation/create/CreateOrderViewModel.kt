@@ -4,6 +4,7 @@ import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.intimocoffee.waiter.core.network.ModifierOptionResponse
+import com.intimocoffee.waiter.feature.orders.presentation.modifiers.splitModifierOptionsFromApi
 import com.intimocoffee.waiter.core.network.RemoteOrderService
 import com.intimocoffee.waiter.feature.auth.domain.repository.AuthRepository
 import com.intimocoffee.waiter.feature.fidelity.domain.model.FidelityCustomer
@@ -37,7 +38,14 @@ import kotlinx.datetime.toLocalDateTime
 import java.math.BigDecimal
 import javax.inject.Inject
 
+enum class OrderPlacementMode {
+    TABLE,
+    TAKEOUT,
+}
+
 data class CreateOrderUiState(
+    val orderPlacementMode: OrderPlacementMode = OrderPlacementMode.TABLE,
+    val takeoutCustomerName: String = "",
     val selectedTable: Table? = null,
     val availableTables: List<Table> = emptyList(),
     val products: List<Product> = emptyList(),
@@ -69,20 +77,24 @@ data class CreateOrderUiState(
     // Modificadores
     val productForModifiers: Product? = null,
     val modifierOptionsByCategory: Map<Long, List<ModifierOptionResponse>> = emptyMap(),
+    val pricedModifierSectionsByCategory: Map<Long, List<Pair<String, List<ModifierOptionResponse>>>> = emptyMap(),
+    val temperaturaOptionsByCategory: Map<Long, List<ModifierOptionResponse>> = emptyMap(),
     // Sugerencia de cliente de mesa activa
     val suggestedCustomerName: String? = null,
     val showCustomerSuggestion: Boolean = false,
 ) {
-    val taxRate = BigDecimal("0.10") // 10% tax
-    
     val calculatedSubtotal: BigDecimal
-        get() = cartItems.fold(BigDecimal.ZERO) { acc, item -> acc.add(item.subtotal) }
-    
+        get() = cartItems.fold(BigDecimal.ZERO) { acc, item ->
+            acc.add(item.product.netFromTaxInclusiveLineTotal(item.subtotal))
+        }
+
     val calculatedTax: BigDecimal
-        get() = calculatedSubtotal.multiply(taxRate)
-    
+        get() = cartItems.fold(BigDecimal.ZERO) { acc, item ->
+            acc.add(item.product.taxIncludedInLineTotal(item.subtotal))
+        }
+
     val calculatedTotal: BigDecimal
-        get() = calculatedSubtotal.add(calculatedTax)
+        get() = cartItems.fold(BigDecimal.ZERO) { acc, item -> acc.add(item.subtotal) }
 
     val fidelityPointsToEarn: Int
         get() = FidelityRepository.calculatePoints(calculatedTotal)
@@ -185,10 +197,14 @@ class CreateOrderViewModel @Inject constructor(
             try {
                 val result = remoteOrderService.getModifierOptionsFromServer()
                 if (result.isSuccess) {
-                    val grouped = (result.getOrNull() ?: emptyList())
-                        .groupBy { it.categoryId.toLongOrNull() ?: 0L }
-                    _uiState.value = _uiState.value.copy(modifierOptionsByCategory = grouped)
-                    Log.d("CreateOrderViewModel", "Loaded modifier options: ${grouped.size} categories")
+                    val list = result.getOrNull() ?: emptyList()
+                    val (dynamic, priced, temperatura) = splitModifierOptionsFromApi(list)
+                    _uiState.value = _uiState.value.copy(
+                        modifierOptionsByCategory = dynamic,
+                        pricedModifierSectionsByCategory = priced,
+                        temperaturaOptionsByCategory = temperatura,
+                    )
+                    Log.d("CreateOrderViewModel", "Loaded modifier options: ${dynamic.size} dynamic categories")
                 }
             } catch (e: Exception) {
                 Log.w("CreateOrderViewModel", "Failed to load modifier options: ${e.message}")
@@ -199,6 +215,7 @@ class CreateOrderViewModel @Inject constructor(
     fun selectTable(table: Table) {
         Log.d("CreateOrderViewModel", "Selecting table: $table")
         _uiState.value = _uiState.value.copy(
+            orderPlacementMode = OrderPlacementMode.TABLE,
             selectedTable = table,
             showTableSelector = false,
             showCustomerSuggestion = false,
@@ -231,6 +248,19 @@ class CreateOrderViewModel @Inject constructor(
 
     fun hideTableSelector() {
         _uiState.value = _uiState.value.copy(showTableSelector = false)
+    }
+
+    fun setOrderPlacementMode(mode: OrderPlacementMode) {
+        _uiState.value = _uiState.value.copy(
+            orderPlacementMode = mode,
+            selectedTable = if (mode == OrderPlacementMode.TAKEOUT) null else _uiState.value.selectedTable,
+            showCustomerSuggestion = if (mode == OrderPlacementMode.TAKEOUT) false else _uiState.value.showCustomerSuggestion,
+            error = null
+        )
+    }
+
+    fun setTakeoutCustomerName(name: String) {
+        _uiState.value = _uiState.value.copy(takeoutCustomerName = name.take(120), error = null)
     }
 
     fun showProductSearch() {
@@ -456,10 +486,20 @@ class CreateOrderViewModel @Inject constructor(
         
         Log.d("CreateOrderViewModel", "Creating order with selectedTable: ${currentState.selectedTable}")
         Log.d("CreateOrderViewModel", "Cart items: ${currentState.cartItems}")
-        
-        if (currentState.selectedTable == null) {
-            _uiState.value = currentState.copy(error = "Debe seleccionar una mesa")
-            return
+
+        when (currentState.orderPlacementMode) {
+            OrderPlacementMode.TABLE -> {
+                if (currentState.selectedTable == null) {
+                    _uiState.value = currentState.copy(error = "Debe seleccionar una mesa")
+                    return
+                }
+            }
+            OrderPlacementMode.TAKEOUT -> {
+                if (currentState.takeoutCustomerName.isBlank()) {
+                    _uiState.value = currentState.copy(error = "Indique el nombre para la orden para llevar")
+                    return
+                }
+            }
         }
         
         if (currentState.cartItems.isEmpty()) {
@@ -523,8 +563,9 @@ class CreateOrderViewModel @Inject constructor(
         viewModelScope.launch {
             try {
                 _uiState.value = currentState.copy(isLoading = true, error = null)
-                
-                val selectedTable = currentState.selectedTable!!
+
+                val takeout = currentState.orderPlacementMode == OrderPlacementMode.TAKEOUT
+                val selectedTable = currentState.selectedTable
 
                 // Obtener el usuario actual para marcar quién creó la orden
                 val currentUser = try {
@@ -540,12 +581,15 @@ class CreateOrderViewModel @Inject constructor(
                 )
                 
                 // Create order directly on the main server using API
-                val customerLabel = currentState.customerName.ifBlank {
-                    currentState.customerPhone.ifBlank { null }
+                val customerLabel = when {
+                    takeout -> currentState.takeoutCustomerName.trim()
+                    else -> currentState.customerName.ifBlank {
+                        currentState.customerPhone.ifBlank { null }
+                    }
                 }
                 val result = remoteOrderService.createOrderOnServer(
-                    tableId = selectedTable.id,
-                    tableName = selectedTable.displayName,
+                    tableId = if (takeout) null else selectedTable!!.id,
+                    tableName = if (takeout) "Para llevar" else selectedTable!!.displayName,
                     customerName = customerLabel,
                     cartItems = currentState.cartItems,
                     notes = null,
@@ -570,7 +614,7 @@ class CreateOrderViewModel @Inject constructor(
                     }
                     
                     // Update local table status (if needed)
-                    if (selectedTable.status == TableStatus.FREE) {
+                    if (!takeout && selectedTable != null && selectedTable.status == TableStatus.FREE) {
                         try {
                             tableRepository.updateTableStatus(
                                 tableId = selectedTable.id,
@@ -586,7 +630,8 @@ class CreateOrderViewModel @Inject constructor(
                     _uiState.value = currentState.copy(
                         isLoading = false,
                         error = null,
-                        orderCreated = true
+                        orderCreated = true,
+                        takeoutCustomerName = ""
                     )
                 } else {
                     val errorMessage = result.exceptionOrNull()?.message ?: "Error desconocido"

@@ -19,6 +19,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.intimocoffee.waiter.feature.orders.domain.model.Order
+import com.intimocoffee.waiter.feature.orders.domain.model.OrderItemStatus
 import com.intimocoffee.waiter.feature.orders.domain.model.OrderStatus
 import java.math.BigDecimal
 import java.text.NumberFormat
@@ -385,31 +386,15 @@ private fun formatDateTime(dateTime: String): String {
     }
 }
 
-/**
- * Gets the appropriate status for an order item based on its category and order status
- */
 private fun getItemStatusText(item: com.intimocoffee.waiter.feature.orders.domain.model.OrderItem, orderStatus: OrderStatus): String {
-    return when {
-        orderStatus == OrderStatus.PENDING -> "Pendiente"
-        orderStatus == OrderStatus.CANCELLED -> "Cancelado"
-        orderStatus == OrderStatus.DELIVERED || orderStatus == OrderStatus.PAID -> "Entregado"
-        item.isFood -> "Enviado a Cocina"
-        item.isDrink -> "Enviado a Barra"
-        else -> "Pendiente"
-    }
+    if (orderStatus == OrderStatus.CANCELLED) return OrderItemStatus.CANCELLED.displayName
+    return item.itemStatus.displayName
 }
 
-/**
- * Gets the appropriate color for an item status
- */
 private fun getItemStatusColor(item: com.intimocoffee.waiter.feature.orders.domain.model.OrderItem, orderStatus: OrderStatus): Color {
-    return when {
-        orderStatus == OrderStatus.PENDING -> Color(0xFFFFA500)
-        orderStatus == OrderStatus.CANCELLED -> Color(0xFFF44336)
-        orderStatus == OrderStatus.DELIVERED || orderStatus == OrderStatus.PAID -> Color(0xFF8BC34A)
-        item.isFood -> Color(0xFFFF9800) // Orange for kitchen
-        item.isDrink -> Color(0xFF2196F3) // Blue for bar
-        else -> Color(0xFFFFA500)
+    if (orderStatus == OrderStatus.CANCELLED) {
+        return Color(android.graphics.Color.parseColor(OrderItemStatus.CANCELLED.color))
     }
+    return Color(android.graphics.Color.parseColor(item.itemStatus.color))
 }
 

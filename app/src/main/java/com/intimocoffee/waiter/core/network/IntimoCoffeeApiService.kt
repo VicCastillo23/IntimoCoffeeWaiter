@@ -34,6 +34,25 @@ interface IntimoCoffeeApiService {
     // API-First de creación de órdenes (servidor REST principal)
     @POST("api/orders")
     suspend fun createOrder(@Body request: CreateOrderRequest): Response<CreateOrderResponse>
+
+    @POST("api/orders/{orderId}/items")
+    suspend fun addOrderItem(
+        @Path("orderId") orderId: Long,
+        @Body body: CreateOrderItemRequest,
+    ): Response<ApiResponse>
+
+    @PUT("api/orders/{orderId}/items/{itemId}")
+    suspend fun updateOrderItemApi(
+        @Path("orderId") orderId: Long,
+        @Path("itemId") itemId: Long,
+        @Body body: UpdateOrderItemBody,
+    ): Response<ApiResponse>
+
+    @DELETE("api/orders/{orderId}/items/{itemId}")
+    suspend fun deleteOrderItemApi(
+        @Path("orderId") orderId: Long,
+        @Path("itemId") itemId: Long,
+    ): Response<ApiResponse>
     
     // Actualización de estado de orden usando el HttpServer (PUT /orders/status)
     // Nota: reusamos UpdateOrderStatusRequest como wrapper compatible con OrderStatusUpdate.
@@ -89,6 +108,12 @@ data class CreateOrderItemRequest(
     @SerialName("subtotal") val subtotal: String,   // BigDecimal as String
     @SerialName("notes") val notes: String?,
     @SerialName("categoryId") val categoryId: Long
+)
+
+@Serializable
+data class UpdateOrderItemBody(
+    @SerialName("quantity") val quantity: Int,
+    @SerialName("notes") val notes: String? = null
 )
 
 @Serializable
@@ -195,7 +220,8 @@ data class ProductResponse(
     @SerialName("imageUrl") val imageUrl: String?,
     @SerialName("isActive") val isActive: Boolean,
     @SerialName("stockQuantity") val stockQuantity: Int?,
-    @SerialName("minStockLevel") val minStockLevel: Int?
+    @SerialName("minStockLevel") val minStockLevel: Int?,
+    @SerialName("taxRatePercent") val taxRatePercent: String? = null
 )
 
 @Serializable
@@ -226,5 +252,8 @@ data class ModifierOptionResponse(
     @SerialName("description") val description: String? = null,
     @SerialName("priceExtra") val priceExtra: String = "0",
     @SerialName("sortOrder") val sortOrder: Int = 0,
-    @SerialName("isActive") val isActive: Boolean = true
+    @SerialName("isActive") val isActive: Boolean = true,
+    @SerialName("uiGroup") val uiGroup: String = "DYNAMIC",
+    @SerialName("sectionTitle") val sectionTitle: String? = null,
+    @SerialName("sectionSortOrder") val sectionSortOrder: Int = 0,
 )

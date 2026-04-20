@@ -17,6 +17,9 @@ import java.math.BigDecimal
 object ApiMappers {
     
     fun mapToProduct(response: ProductResponse): Product {
+        val taxRate = response.taxRatePercent
+            ?.takeIf { it.isNotBlank() }
+            ?.let { runCatching { BigDecimal(it) }.getOrNull() }
         return Product(
             id = response.id,
             name = response.name,
@@ -28,7 +31,8 @@ object ApiMappers {
             isActive = response.isActive,
             stockQuantity = response.stockQuantity,
             minStockLevel = response.minStockLevel,
-            barcode = null // Not available in API response
+            barcode = null, // Not available in API response
+            taxRatePercent = taxRate
         )
     }
     
@@ -55,7 +59,7 @@ object ApiMappers {
             tableName = response.tableName,
             customerName = response.customerName,
             status = mapToOrderStatus(response.status),
-            items = response.items.map { mapToOrderItem(it) },
+            items = response.items.map { mapToOrderItem(it).copy(orderId = response.id) },
             subtotal = BigDecimal(response.subtotal),
             tax = BigDecimal(response.tax),
             total = BigDecimal(response.total),

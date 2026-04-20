@@ -7,6 +7,7 @@ import com.intimocoffee.waiter.core.network.RemoteOrderService
 import com.intimocoffee.waiter.feature.products.data.mapper.ProductMapper
 import com.intimocoffee.waiter.feature.products.domain.model.Product
 import com.intimocoffee.waiter.feature.products.domain.repository.ProductRepository
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.map
@@ -43,6 +44,8 @@ class ProductRepositoryImpl @Inject constructor(
                 )
                 emit(emptyList())
             }
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             Log.e(
                 "ProductRepository",
@@ -76,6 +79,8 @@ class ProductRepositoryImpl @Inject constructor(
                 )
                 emit(emptyList())
             }
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             Log.e(
                 "ProductRepository",
@@ -146,6 +151,8 @@ class ProductRepositoryImpl @Inject constructor(
                 )
                 emit(emptyList())
             }
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             Log.e(
                 "ProductRepository",

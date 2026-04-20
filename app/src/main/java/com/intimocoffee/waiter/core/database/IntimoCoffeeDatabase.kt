@@ -21,7 +21,7 @@ import com.intimocoffee.waiter.core.database.entity.*
         NotificationEntity::class,
         FidelityCustomerEntity::class
     ],
-    version = 7,
+    version = 8,
     exportSchema = false
 )
 abstract class IntimoCoffeeDatabase : RoomDatabase() {
@@ -141,6 +141,12 @@ abstract class IntimoCoffeeDatabase : RoomDatabase() {
         }
         
         // Migration from version 6 to 7: Add fidelity_customers table
+        private val MIGRATION_7_8 = object : Migration(7, 8) {
+            override fun migrate(database: SupportSQLiteDatabase) {
+                database.execSQL("ALTER TABLE products ADD COLUMN taxRatePercent TEXT")
+            }
+        }
+
         private val MIGRATION_6_7 = object : Migration(6, 7) {
             override fun migrate(database: SupportSQLiteDatabase) {
                 database.execSQL("""
@@ -180,7 +186,7 @@ abstract class IntimoCoffeeDatabase : RoomDatabase() {
                     IntimoCoffeeDatabase::class.java,
                     "intimo_coffee_database"
                 )
-                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7)
+                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8)
                     .fallbackToDestructiveMigration() // For development - recreates DB if migration fails
                     .fallbackToDestructiveMigrationOnDowngrade()
                     .build()

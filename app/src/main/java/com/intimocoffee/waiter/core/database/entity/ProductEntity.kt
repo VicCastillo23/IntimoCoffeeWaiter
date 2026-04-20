@@ -17,6 +17,7 @@ data class ProductEntity(
     val stockQuantity: Int? = null,
     val minStockLevel: Int? = null,
     val barcode: String? = null,
+    val taxRatePercent: String? = null,
     val createdAt: Long = System.currentTimeMillis(),
     val updatedAt: Long = System.currentTimeMillis()
 ) {

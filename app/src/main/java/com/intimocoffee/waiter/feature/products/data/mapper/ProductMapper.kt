@@ -21,7 +21,10 @@ class ProductMapper @Inject constructor() {
             isActive = entity.isActive,
             stockQuantity = entity.stockQuantity,
             minStockLevel = entity.minStockLevel,
-            barcode = entity.barcode
+            barcode = entity.barcode,
+            taxRatePercent = entity.taxRatePercent?.takeIf { it.isNotBlank() }?.let {
+                runCatching { BigDecimal(it) }.getOrNull()
+            }
         )
     }
     
@@ -36,7 +39,8 @@ class ProductMapper @Inject constructor() {
             isActive = product.isActive,
             stockQuantity = product.stockQuantity,
             minStockLevel = product.minStockLevel,
-            barcode = product.barcode
+            barcode = product.barcode,
+            taxRatePercent = product.taxRatePercent?.stripTrailingZeros()?.toPlainString()
         )
     }
     

@@ -8,6 +8,7 @@ import com.intimocoffee.waiter.feature.tables.data.mapper.TableMapper
 import com.intimocoffee.waiter.feature.tables.domain.model.Table
 import com.intimocoffee.waiter.feature.tables.domain.model.TableStatus
 import com.intimocoffee.waiter.feature.tables.domain.repository.TableRepository
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.map
@@ -44,6 +45,8 @@ class TableRepositoryImpl @Inject constructor(
                 )
                 emit(emptyList())
             }
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             Log.e(
                 "TableRepository",
@@ -80,6 +83,8 @@ class TableRepositoryImpl @Inject constructor(
                 )
                 emit(emptyList())
             }
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             Log.e(
                 "TableRepository",
@@ -180,6 +185,8 @@ class TableRepositoryImpl @Inject constructor(
                 )
                 emit(emptyList())
             }
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             Log.e(
                 "TableRepository",
@@ -216,6 +223,8 @@ class TableRepositoryImpl @Inject constructor(
                 )
                 emit(emptyList())
             }
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             Log.e(
                 "TableRepository",

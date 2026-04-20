@@ -1,5 +1,6 @@
 package com.intimocoffee.waiter.feature.orders.presentation.components
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
@@ -16,10 +17,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardCapitalization
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.intimocoffee.waiter.core.network.ModifierOptionResponse
-import com.intimocoffee.waiter.feature.orders.presentation.modifiers.OrderModifiersCatalog
-import com.intimocoffee.waiter.feature.orders.presentation.modifiers.PricedModifier
 import com.intimocoffee.waiter.feature.products.domain.model.Product
 import java.math.BigDecimal
 import java.text.NumberFormat
@@ -28,8 +29,6 @@ import java.util.*
 // ─── Category groups (hoja) ─────────────────────────────────────────────────
 private val ESPECIALIDAD_IDS = setOf(4L, 5L, 6L)
 private val FRIOS_IDS = setOf(7L, 8L, 9L, 10L)
-private val TISANAS_IDS = setOf(11L, 12L, 13L)
-
 private val catColorMap = mapOf(
     1L to Color(0xFF8D4925), 2L to Color(0xFF8D4925), 3L to Color(0xFF8D4925),
     4L to Color(0xFF6D4C41), 5L to Color(0xFF455A64), 6L to Color(0xFF546E7A),
@@ -47,6 +46,8 @@ private fun catColor(id: Long): Color = catColorMap[id] ?: defaultCatColor
 fun ProductModifierSheet(
     product: Product,
     modifierOptions: Map<Long, List<ModifierOptionResponse>> = emptyMap(),
+    pricedSections: List<Pair<String, List<ModifierOptionResponse>>> = emptyList(),
+    temperaturaOptions: List<ModifierOptionResponse> = emptyList(),
     onAdd: (modifiers: List<String>, note: String, priceExtra: BigDecimal) -> Unit,
     onDismiss: () -> Unit
 ) {
@@ -63,16 +64,20 @@ fun ProductModifierSheet(
         else -> "Opciones"
     }
 
-    val pricedSections = remember(catId) { OrderModifiersCatalog.staticPricedSectionsForLeafCategory(catId) }
-    val showTemperaturaTisana = catId in TISANAS_IDS
+    val showTemperaturaTisana = temperaturaOptions.isNotEmpty()
 
     var staticSingle by remember(product.id) { mutableStateOf<String?>(null) }
     var dynamicSelected by remember(product.id) { mutableStateOf<ModifierOptionResponse?>(null) }
     var customNote by remember(product.id) { mutableStateOf("") }
-    val selectedPriced = remember(product.id) { mutableStateListOf<String>() }
+    val selectedPricedIds = remember(product.id) { mutableStateListOf<String>() }
 
-    val staticExtra = remember(selectedPriced.toList(), pricedSections) {
-        OrderModifiersCatalog.totalForSelectedLabels(selectedPriced.toSet())
+    val pricedFlat = remember(pricedSections) {
+        pricedSections.flatMap { it.second }.associateBy { it.id }
+    }
+    val staticExtra = remember(selectedPricedIds.toList(), pricedSections) {
+        selectedPricedIds.fold(BigDecimal.ZERO) { acc, id ->
+            acc.add(pricedFlat[id]?.priceExtra?.toBigDecimalOrNull() ?: BigDecimal.ZERO)
+        }
     }
     val dynamicExtra = if (showDynamicPrices)
         dynamicSelected?.priceExtra?.toBigDecimalOrNull() ?: BigDecimal.ZERO
@@ -137,7 +142,7 @@ fun ProductModifierSheet(
             if (showTemperaturaTisana) {
                 SectionHeader(title = "Temperatura")
                 SingleSelectChips(
-                    options = OrderModifiersCatalog.temperaturaTisanaOptions(),
+                    options = temperaturaOptions.map { it.name },
                     selected = staticSingle,
                     onSelect = { staticSingle = if (staticSingle == it) null else it },
                     categoryColor = color,
@@ -162,7 +167,7 @@ fun ProductModifierSheet(
                 SectionHeader(title = title)
                 PricedMultiChips(
                     items = items,
-                    selected = selectedPriced,
+                    selectedIds = selectedPricedIds,
                     categoryColor = color,
                     formatter = fmt,
                     modifier = Modifier.padding(horizontal = 16.dp)
@@ -190,7 +195,7 @@ fun ProductModifierSheet(
             )
 
             val allSelected = buildList {
-                addAll(selectedPriced)
+                addAll(selectedPricedIds.mapNotNull { pricedFlat[it]?.name })
                 staticSingle?.let { add(it) }
                 dynamicSelected?.let { add(it.name) }
             }
@@ -207,13 +212,13 @@ fun ProductModifierSheet(
                         .fillMaxWidth()
                         .padding(horizontal = 16.dp, vertical = 12.dp),
                     shape = RoundedCornerShape(10.dp),
-                    color = color.copy(0.08f)
+                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f)
                 ) {
                     Text(
                         text = "📝 $preview",
                         modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
                         style = MaterialTheme.typography.bodySmall,
-                        color = color
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
             } else {
@@ -236,7 +241,7 @@ fun ProductModifierSheet(
                 Button(
                     onClick = {
                         val finalModifiers = buildList {
-                            addAll(selectedPriced)
+                            addAll(selectedPricedIds.mapNotNull { pricedFlat[it]?.name })
                             staticSingle?.let { add(it) }
                             dynamicSelected?.let { add(it.name) }
                         }.distinct()
@@ -275,17 +280,27 @@ private fun SingleSelectChips(
     categoryColor: Color,
     modifier: Modifier = Modifier
 ) {
-    val rows = options.chunked(4)
-    Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(8.dp)) {
+    val cols = 2
+    val rows = options.chunked(cols)
+    Column(modifier = modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         rows.forEach { rowItems ->
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
                 rowItems.forEach { opt ->
-                    ModifierChip(
-                        label = opt,
-                        isSelected = selected == opt,
-                        color = categoryColor,
-                        onClick = { onSelect(opt) }
-                    )
+                    Box(modifier = Modifier.weight(1f)) {
+                        ModifierChip(
+                            label = opt,
+                            isSelected = selected == opt,
+                            color = categoryColor,
+                            onClick = { onSelect(opt) },
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                    }
+                }
+                repeat(cols - rowItems.size) {
+                    Spacer(Modifier.weight(1f))
                 }
             }
         }
@@ -302,20 +317,30 @@ private fun DynamicSingleSelectChips(
     formatter: NumberFormat,
     modifier: Modifier = Modifier
 ) {
-    val rows = options.chunked(3)
-    Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(8.dp)) {
+    val cols = 2
+    val rows = options.chunked(cols)
+    Column(modifier = modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         rows.forEach { rowItems ->
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
                 rowItems.forEach { opt ->
                     val priceExtra = opt.priceExtra.toBigDecimalOrNull() ?: BigDecimal.ZERO
                     val suffix = if (showPrices && priceExtra > BigDecimal.ZERO)
                         " +${formatter.format(priceExtra)}" else ""
-                    ModifierChip(
-                        label = "${opt.name}$suffix",
-                        isSelected = selected?.id == opt.id,
-                        color = categoryColor,
-                        onClick = { onSelect(opt) }
-                    )
+                    Box(modifier = Modifier.weight(1f)) {
+                        ModifierChip(
+                            label = "${opt.name}$suffix",
+                            isSelected = selected?.id == opt.id,
+                            color = categoryColor,
+                            onClick = { onSelect(opt) },
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                    }
+                }
+                repeat(cols - rowItems.size) {
+                    Spacer(Modifier.weight(1f))
                 }
             }
         }
@@ -324,29 +349,40 @@ private fun DynamicSingleSelectChips(
 
 @Composable
 private fun PricedMultiChips(
-    items: List<PricedModifier>,
-    selected: MutableList<String>,
+    items: List<ModifierOptionResponse>,
+    selectedIds: MutableList<String>,
     categoryColor: Color,
     formatter: NumberFormat,
     modifier: Modifier = Modifier
 ) {
-    val rows = items.chunked(3)
-    Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(8.dp)) {
+    val cols = 2
+    val rows = items.chunked(cols)
+    Column(modifier = modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         rows.forEach { rowItems ->
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                rowItems.forEach { pm ->
-                    val suffix = if (pm.price > BigDecimal.ZERO) " +${formatter.format(pm.price)}" else ""
-                    val label = "${pm.label}$suffix"
-                    val isOn = selected.contains(pm.label)
-                    ModifierChip(
-                        label = label,
-                        isSelected = isOn,
-                        color = categoryColor,
-                        onClick = {
-                            if (isOn) selected.remove(pm.label) else selected.add(pm.label)
-                        },
-                        showCheckmark = true
-                    )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                rowItems.forEach { opt ->
+                    val price = opt.priceExtra.toBigDecimalOrNull() ?: BigDecimal.ZERO
+                    val suffix = if (price > BigDecimal.ZERO) " +${formatter.format(price)}" else ""
+                    val label = "${opt.name}$suffix"
+                    val isOn = selectedIds.contains(opt.id)
+                    Box(modifier = Modifier.weight(1f)) {
+                        ModifierChip(
+                            label = label,
+                            isSelected = isOn,
+                            color = categoryColor,
+                            onClick = {
+                                if (isOn) selectedIds.remove(opt.id) else selectedIds.add(opt.id)
+                            },
+                            showCheckmark = true,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                    }
+                }
+                repeat(cols - rowItems.size) {
+                    Spacer(Modifier.weight(1f))
                 }
             }
         }
@@ -359,30 +395,40 @@ private fun ModifierChip(
     isSelected: Boolean,
     color: Color,
     onClick: () -> Unit,
-    showCheckmark: Boolean = false
+    showCheckmark: Boolean = false,
+    modifier: Modifier = Modifier
 ) {
+    val onSurface = MaterialTheme.colorScheme.onSurface
+    val bg = if (isSelected) color else color.copy(alpha = 0.16f)
+    val fg = if (isSelected) Color.White else onSurface
+    val borderCol = if (isSelected) color else color.copy(alpha = 0.5f)
     Surface(
         onClick = onClick,
-        shape = RoundedCornerShape(20.dp),
-        color = if (isSelected) color else color.copy(0.08f),
-        border = androidx.compose.foundation.BorderStroke(
-            1.dp,
-            color.copy(if (isSelected) 1f else 0.25f)
-        )
+        modifier = modifier.defaultMinSize(minHeight = 52.dp),
+        shape = RoundedCornerShape(12.dp),
+        color = bg,
+        border = BorderStroke(1.dp, borderCol)
     ) {
-        Row(
-            modifier = Modifier.padding(horizontal = 12.dp, vertical = 7.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(4.dp)
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 10.dp, vertical = 10.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
         ) {
             if (showCheckmark && isSelected) {
-                Icon(Icons.Default.Check, null, Modifier.size(13.dp), tint = Color.White)
+                Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(16.dp), tint = Color.White)
+                Spacer(Modifier.height(4.dp))
             }
             Text(
                 text = label,
                 style = MaterialTheme.typography.bodySmall,
-                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
-                color = if (isSelected) Color.White else color
+                fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Medium,
+                color = fg,
+                textAlign = TextAlign.Center,
+                maxLines = 4,
+                overflow = TextOverflow.Ellipsis,
+                lineHeight = MaterialTheme.typography.bodySmall.lineHeight,
+                modifier = Modifier.fillMaxWidth()
             )
         }
     }

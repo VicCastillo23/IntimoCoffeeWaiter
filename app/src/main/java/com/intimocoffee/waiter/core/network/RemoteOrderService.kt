@@ -15,6 +15,11 @@ import javax.inject.Singleton
 class RemoteOrderService @Inject constructor(
     private val retrofitProvider: DynamicRetrofitProvider
 ) {
+    private fun isConnectionException(e: Exception): Boolean {
+        return e is java.net.ConnectException ||
+            e is java.net.UnknownHostException ||
+            e is java.net.SocketTimeoutException
+    }
     
     /**
      * Creates an order on the main IntimoCoffeeApp server.
@@ -400,6 +405,109 @@ class RemoteOrderService @Inject constructor(
             }
         } catch (e: Exception) {
             Log.e("RemoteOrderService", "Exception fetching modifier options: ${e.message}", e)
+            Result.failure(e)
+        }
+    }
+
+    suspend fun addOrderItemOnServer(orderId: Long, item: OrderItem): Result<Boolean> {
+        return try {
+            val req = CreateOrderItemRequest(
+                productId = item.productId,
+                productName = item.productName,
+                quantity = item.quantity,
+                unitPrice = item.productPrice.toPlainString(),
+                subtotal = item.subtotal.toPlainString(),
+                notes = item.notes,
+                categoryId = item.categoryId
+            )
+            val response = retrofitProvider.getApiService().addOrderItem(orderId, req)
+            if (response.isSuccessful && response.body()?.success == true) {
+                Result.success(true)
+            } else {
+                Result.failure(Exception(response.body()?.message ?: "Error al agregar ítem"))
+            }
+        } catch (e: Exception) {
+            Log.e("RemoteOrderService", "addOrderItemOnServer: ${e.message}", e)
+            if (isConnectionException(e)) {
+                try {
+                    retrofitProvider.rediscoverServer()
+                    val req = CreateOrderItemRequest(
+                        productId = item.productId,
+                        productName = item.productName,
+                        quantity = item.quantity,
+                        unitPrice = item.productPrice.toPlainString(),
+                        subtotal = item.subtotal.toPlainString(),
+                        notes = item.notes,
+                        categoryId = item.categoryId
+                    )
+                    val retry = retrofitProvider.getApiService().addOrderItem(orderId, req)
+                    if (retry.isSuccessful && retry.body()?.success == true) {
+                        Log.d("RemoteOrderService", "addOrderItemOnServer retry success after rediscovery")
+                        return Result.success(true)
+                    }
+                } catch (e2: Exception) {
+                    Log.e("RemoteOrderService", "addOrderItemOnServer retry failed: ${e2.message}", e2)
+                }
+            }
+            Result.failure(e)
+        }
+    }
+
+    suspend fun updateOrderItemOnServer(
+        orderId: Long,
+        itemId: Long,
+        quantity: Int,
+        notes: String?,
+    ): Result<Boolean> {
+        return try {
+            val body = UpdateOrderItemBody(quantity = quantity, notes = notes)
+            val response = retrofitProvider.getApiService().updateOrderItemApi(orderId, itemId, body)
+            if (response.isSuccessful && response.body()?.success == true) {
+                Result.success(true)
+            } else {
+                Result.failure(Exception(response.body()?.message ?: "Error al actualizar ítem"))
+            }
+        } catch (e: Exception) {
+            Log.e("RemoteOrderService", "updateOrderItemOnServer: ${e.message}", e)
+            if (isConnectionException(e)) {
+                try {
+                    retrofitProvider.rediscoverServer()
+                    val retry = retrofitProvider.getApiService()
+                        .updateOrderItemApi(orderId, itemId, UpdateOrderItemBody(quantity = quantity, notes = notes))
+                    if (retry.isSuccessful && retry.body()?.success == true) {
+                        Log.d("RemoteOrderService", "updateOrderItemOnServer retry success after rediscovery")
+                        return Result.success(true)
+                    }
+                } catch (e2: Exception) {
+                    Log.e("RemoteOrderService", "updateOrderItemOnServer retry failed: ${e2.message}", e2)
+                }
+            }
+            Result.failure(e)
+        }
+    }
+
+    suspend fun removeOrderItemFromServer(orderId: Long, itemId: Long): Result<Boolean> {
+        return try {
+            val response = retrofitProvider.getApiService().deleteOrderItemApi(orderId, itemId)
+            if (response.isSuccessful && response.body()?.success == true) {
+                Result.success(true)
+            } else {
+                Result.failure(Exception(response.body()?.message ?: "Error al eliminar ítem"))
+            }
+        } catch (e: Exception) {
+            Log.e("RemoteOrderService", "removeOrderItemFromServer: ${e.message}", e)
+            if (isConnectionException(e)) {
+                try {
+                    retrofitProvider.rediscoverServer()
+                    val retry = retrofitProvider.getApiService().deleteOrderItemApi(orderId, itemId)
+                    if (retry.isSuccessful && retry.body()?.success == true) {
+                        Log.d("RemoteOrderService", "removeOrderItemFromServer retry success after rediscovery")
+                        return Result.success(true)
+                    }
+                } catch (e2: Exception) {
+                    Log.e("RemoteOrderService", "removeOrderItemFromServer retry failed: ${e2.message}", e2)
+                }
+            }
             Result.failure(e)
         }
     }

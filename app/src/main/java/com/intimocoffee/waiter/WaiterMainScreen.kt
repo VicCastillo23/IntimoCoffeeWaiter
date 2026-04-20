@@ -1,8 +1,8 @@
 package com.intimocoffee.waiter
 
-import android.media.AudioManager
-import android.media.ToneGenerator
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -13,6 +13,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -20,6 +21,8 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import com.intimocoffee.waiter.feature.orders.domain.model.Order
 import com.intimocoffee.waiter.feature.orders.domain.model.OrderItem
 import com.intimocoffee.waiter.feature.orders.domain.model.OrderStatus
+import com.intimocoffee.waiter.feature.orders.presentation.OrderEditScreen
+import com.intimocoffee.waiter.core.alert.WorkAlertSound
 import com.intimocoffee.waiter.feature.orders.presentation.OrdersViewModel
 import java.math.BigDecimal
 import java.text.NumberFormat
@@ -27,7 +30,7 @@ import java.util.*
 
 private enum class WaiterTab { MIS_ORDENES, LISTAS }
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
 fun WaiterMainScreen(
     viewModel: OrdersViewModel = hiltViewModel(),
@@ -35,10 +38,32 @@ fun WaiterMainScreen(
     onLogout: () -> Unit = {},
 ) {
     val uiState by viewModel.uiState.collectAsState()
+    val context = LocalContext.current
+    uiState.orderToEdit?.let { orderToEdit ->
+        OrderEditScreen(
+            order = orderToEdit,
+            products = uiState.productsForEdit,
+            modifierOptionsByCategory = uiState.modifierOptionsByCategory,
+            pricedModifierSectionsByCategory = uiState.pricedModifierSectionsByCategory,
+            temperaturaOptionsByCategory = uiState.temperaturaOptionsByCategory,
+            onBack = { viewModel.dismissEditOrder() },
+            onSave = { removed, updated, added ->
+                viewModel.applyOrderEditsRemote(orderToEdit, removed, updated, added)
+            }
+        )
+        return
+    }
+
     var selectedTab by remember { mutableStateOf(WaiterTab.MIS_ORDENES) }
 
     LaunchedEffect(Unit) {
         viewModel.loadOrders()
+    }
+
+    LaunchedEffect(Unit) {
+        viewModel.workAlertEvent.collect {
+            WorkAlertSound.play(context)
+        }
     }
 
     // Ordenes del mesero actual
@@ -63,8 +88,7 @@ fun WaiterMainScreen(
     LaunchedEffect(readyCount) {
         if (prevReadyCount >= 0 && readyCount > prevReadyCount) {
             try {
-                ToneGenerator(AudioManager.STREAM_RING, 90)
-                    .startTone(ToneGenerator.TONE_PROP_BEEP2, 600)
+                WorkAlertSound.play(context)
             } catch (_: Exception) {}
         }
         prevReadyCount = readyCount
@@ -211,6 +235,21 @@ fun WaiterMainScreen(
 
             Spacer(modifier = Modifier.height(12.dp))
 
+            uiState.error?.let { msg ->
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer)
+                ) {
+                    Text(
+                        text = msg,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onErrorContainer,
+                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)
+                    )
+                }
+                Spacer(modifier = Modifier.height(8.dp))
+            }
+
             // ── Contenido del tab seleccionado ─────────────────────
             if (uiState.isLoading) {
                 Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
@@ -254,7 +293,8 @@ fun WaiterMainScreen(
                                         order = order,
                                         onDeliverOrder = { orderId ->
                                             viewModel.updateOrderStatus(orderId, OrderStatus.DELIVERED)
-                                        }
+                                        },
+                                        onLongClickEdit = { viewModel.openEditOrder(order) }
                                     )
                                 }
                             }
@@ -292,7 +332,8 @@ fun WaiterMainScreen(
                                         order = order,
                                         onDeliverOrder = { orderId ->
                                             viewModel.updateOrderStatus(orderId, OrderStatus.DELIVERED)
-                                        }
+                                        },
+                                        onLongClickEdit = { viewModel.openEditOrder(order) }
                                     )
                                 }
                             }
@@ -302,12 +343,15 @@ fun WaiterMainScreen(
             }
         }
     }
+
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun WaiterOrderCard(
     order: Order,
-    onDeliverOrder: (Long) -> Unit
+    onDeliverOrder: (Long) -> Unit,
+    onLongClickEdit: () -> Unit = {},
 ) {
     val isReady = order.status == OrderStatus.READY
     val cardColor = if (isReady) MaterialTheme.colorScheme.primary.copy(alpha = 0.05f) else MaterialTheme.colorScheme.surface
@@ -316,6 +360,10 @@ fun WaiterOrderCard(
     Card(
         modifier = Modifier
             .fillMaxWidth()
+            .combinedClickable(
+                onClick = {},
+                onLongClick = onLongClickEdit
+            )
             .background(borderColor.copy(alpha = if (isReady) 0.15f else 0f), RoundedCornerShape(12.dp)),
         elevation = CardDefaults.cardElevation(defaultElevation = if (isReady) 6.dp else 2.dp),
         colors = CardDefaults.cardColors(
@@ -440,6 +488,16 @@ fun WaiterOrderCard(
                         fontWeight = FontWeight.Medium
                     )
                 }
+            }
+
+            Spacer(modifier = Modifier.height(8.dp))
+            OutlinedButton(
+                onClick = onLongClickEdit,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Icon(Icons.Default.Edit, contentDescription = null, modifier = Modifier.size(18.dp))
+                Spacer(modifier = Modifier.width(8.dp))
+                Text("Editar orden")
             }
 
             // Timestamp

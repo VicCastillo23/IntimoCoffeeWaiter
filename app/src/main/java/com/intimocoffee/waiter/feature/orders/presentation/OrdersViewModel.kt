@@ -3,15 +3,21 @@ package com.intimocoffee.waiter.feature.orders.presentation
 import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.intimocoffee.waiter.core.network.RemoteOrderService
 import com.intimocoffee.waiter.feature.auth.domain.repository.AuthRepository
 import com.intimocoffee.waiter.feature.orders.domain.model.Order
+import com.intimocoffee.waiter.feature.orders.domain.model.OrderItem
 import com.intimocoffee.waiter.feature.orders.domain.model.OrderStatus
 import com.intimocoffee.waiter.feature.orders.domain.usecase.*
+import com.intimocoffee.waiter.feature.orders.presentation.modifiers.splitModifierOptionsFromApi
+import com.intimocoffee.waiter.feature.products.domain.model.Product
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.*
 import com.intimocoffee.waiter.core.network.DynamicRetrofitProvider
+import com.intimocoffee.waiter.feature.products.domain.repository.ProductRepository
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import javax.inject.Inject
@@ -28,7 +34,12 @@ data class OrdersUiState(
     val showCreateOrder: Boolean = false,
     val currentUserId: Long? = null,
     val currentUserName: String? = null,
-    val serverUrl: String = ""
+    val serverUrl: String = "",
+    val orderToEdit: Order? = null,
+    val productsForEdit: List<Product> = emptyList(),
+    val modifierOptionsByCategory: Map<Long, List<com.intimocoffee.waiter.core.network.ModifierOptionResponse>> = emptyMap(),
+    val pricedModifierSectionsByCategory: Map<Long, List<Pair<String, List<com.intimocoffee.waiter.core.network.ModifierOptionResponse>>>> = emptyMap(),
+    val temperaturaOptionsByCategory: Map<Long, List<com.intimocoffee.waiter.core.network.ModifierOptionResponse>> = emptyMap(),
 )
 
 @HiltViewModel
@@ -41,12 +52,20 @@ class OrdersViewModel @Inject constructor(
     private val getOrderDetailsUseCase: GetOrderDetailsUseCase,
     private val authRepository: AuthRepository,
     private val retrofitProvider: DynamicRetrofitProvider,
+    private val remoteOrderService: RemoteOrderService,
+    private val productRepository: ProductRepository,
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(OrdersUiState())
     val uiState = _uiState.asStateFlow()
 
     private val _orders = MutableStateFlow<List<Order>>(emptyList())
+
+    /** IDs de órdenes ya vistas; si aparece una nueva en sync, alerta sonora. */
+    private val knownOrderIds = mutableSetOf<Long>()
+    private var ordersAlertBaselineReady = false
+    private val _workAlertEvent = MutableSharedFlow<Unit>(extraBufferCapacity = 1)
+    val workAlertEvent = _workAlertEvent.asSharedFlow()
 
     private var autoSyncJob: Job? = null
     private val autoSyncIntervalMs = 10_000L // 10 segundos
@@ -83,6 +102,9 @@ class OrdersViewModel @Inject constructor(
                 // Exclude ARCHIVED orders to give impression of clean day
                 val orders = allOrders.filter { it.status != OrderStatus.ARCHIVED }
                 _orders.value = orders
+                knownOrderIds.clear()
+                knownOrderIds.addAll(orders.map { it.id })
+                ordersAlertBaselineReady = true
                 _uiState.update {
                     it.copy(
                         orders = orders,
@@ -251,6 +273,92 @@ class OrdersViewModel @Inject constructor(
         loadOrders()
     }
 
+    fun openEditOrder(order: Order) {
+        if (OrderStatus.isCompleted(order.status)) return
+        _uiState.update { current ->
+            current.copy(
+                orderToEdit = order,
+                error = null
+            )
+        }
+        viewModelScope.launch {
+            try {
+                val products = productRepository.getAllActiveProducts().first()
+                val modifierOptions = remoteOrderService.getModifierOptionsFromServer().getOrDefault(emptyList())
+                val (dynamic, priced, temp) = splitModifierOptionsFromApi(modifierOptions)
+                _uiState.update {
+                    it.copy(
+                        productsForEdit = products,
+                        modifierOptionsByCategory = dynamic,
+                        pricedModifierSectionsByCategory = priced,
+                        temperaturaOptionsByCategory = temp,
+                        error = null
+                    )
+                }
+            } catch (e: Exception) {
+                _uiState.update {
+                    it.copy(
+                        // Keep dialog open even if product refresh fails.
+                        error = e.message ?: "No se pudo cargar el catálogo para edición"
+                    )
+                }
+            }
+        }
+    }
+
+    fun dismissEditOrder() {
+        _uiState.update {
+            it.copy(
+                orderToEdit = null,
+                productsForEdit = emptyList(),
+                modifierOptionsByCategory = emptyMap(),
+                pricedModifierSectionsByCategory = emptyMap(),
+                temperaturaOptionsByCategory = emptyMap()
+            )
+        }
+    }
+
+    fun applyOrderEditsRemote(
+        order: Order,
+        removedIds: List<Long>,
+        updated: List<OrderItem>,
+        added: List<OrderItem>,
+    ) {
+        viewModelScope.launch {
+            _uiState.update { it.copy(isLoading = true, error = null) }
+            try {
+                var appliedOps = 0
+                for (id in removedIds) {
+                    remoteOrderService.removeOrderItemFromServer(order.id, id).getOrThrow()
+                    appliedOps++
+                }
+                for (item in updated) {
+                    remoteOrderService.updateOrderItemOnServer(
+                        order.id,
+                        item.id,
+                        item.quantity,
+                        item.notes
+                    ).getOrThrow()
+                    appliedOps++
+                }
+                for (item in added) {
+                    remoteOrderService.addOrderItemOnServer(order.id, item).getOrThrow()
+                    appliedOps++
+                }
+                if (appliedOps == 0) {
+                    _uiState.update { it.copy(error = "No hubo cambios para guardar") }
+                }
+                dismissEditOrder()
+                refreshOrders()
+            } catch (e: Exception) {
+                _uiState.update {
+                    it.copy(isLoading = false, error = e.message ?: "Error al guardar la orden")
+                }
+            }
+            _uiState.update { it.copy(isLoading = false) }
+        }
+    }
+
     private fun startAutoSync() {
         autoSyncJob?.cancel()
 
@@ -263,6 +371,15 @@ class OrdersViewModel @Inject constructor(
                     try {
                         val allOrders = getOrdersUseCase().first()
                         val orders = allOrders.filter { it.status != OrderStatus.ARCHIVED }
+                        if (ordersAlertBaselineReady) {
+                            val ids = orders.map { it.id }.toSet()
+                            val newIds = ids - knownOrderIds
+                            if (newIds.isNotEmpty()) {
+                                _workAlertEvent.tryEmit(Unit)
+                            }
+                            knownOrderIds.clear()
+                            knownOrderIds.addAll(ids)
+                        }
                         _orders.value = orders
 
                         _uiState.update { currentState ->
