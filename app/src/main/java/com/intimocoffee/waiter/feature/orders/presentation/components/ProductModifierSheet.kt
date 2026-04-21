@@ -29,17 +29,6 @@ import java.util.*
 // ─── Category groups (hoja) ─────────────────────────────────────────────────
 private val ESPECIALIDAD_IDS = setOf(4L, 5L, 6L)
 private val FRIOS_IDS = setOf(7L, 8L, 9L, 10L)
-private val catColorMap = mapOf(
-    1L to Color(0xFF8D4925), 2L to Color(0xFF8D4925), 3L to Color(0xFF8D4925),
-    4L to Color(0xFF6D4C41), 5L to Color(0xFF455A64), 6L to Color(0xFF546E7A),
-    7L to Color(0xFF1E88E5), 8L to Color(0xFF1565C0), 9L to Color(0xFF0288D1),
-    10L to Color(0xFF039BE5), 11L to Color(0xFF43A047), 12L to Color(0xFF2E7D32),
-    13L to Color(0xFF388E3C), 14L to Color(0xFFF9A825),
-    15L to Color(0xFFFF6F00), 16L to Color(0xFFE65100), 17L to Color(0xFFBF360C),
-    18L to Color(0xFF757575),
-)
-private val defaultCatColor = Color(0xFF757575)
-private fun catColor(id: Long): Color = catColorMap[id] ?: defaultCatColor
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -53,7 +42,8 @@ fun ProductModifierSheet(
 ) {
     val fmt = NumberFormat.getCurrencyInstance(Locale("es", "MX"))
     val catId = product.categoryId
-    val color = catColor(catId)
+    // Misma paleta que IntimoCoffeeApp (evita chips por categoría de colores distintos).
+    val accent = MaterialTheme.colorScheme.primary
     val dynamicOptions = modifierOptions[catId] ?: emptyList()
 
     val showDynamicSingle = (catId in ESPECIALIDAD_IDS || catId in FRIOS_IDS) && dynamicOptions.isNotEmpty()
@@ -103,7 +93,7 @@ fun ProductModifierSheet(
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(4.dp)
-                    .background(color)
+                    .background(accent)
             )
             Row(
                 modifier = Modifier
@@ -123,15 +113,18 @@ fun ProductModifierSheet(
                         text = fmt.format(displayPrice),
                         style = MaterialTheme.typography.bodyLarge,
                         fontWeight = FontWeight.SemiBold,
-                        color = color
+                        color = accent
                     )
                 }
-                Surface(shape = RoundedCornerShape(12.dp), color = color.copy(0.10f)) {
+                Surface(
+                    shape = RoundedCornerShape(12.dp),
+                    color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.55f)
+                ) {
                     Text(
                         text = "Personalizar",
                         modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
                         style = MaterialTheme.typography.labelMedium,
-                        color = color,
+                        color = MaterialTheme.colorScheme.onPrimaryContainer,
                         fontWeight = FontWeight.SemiBold
                     )
                 }
@@ -145,7 +138,7 @@ fun ProductModifierSheet(
                     options = temperaturaOptions.map { it.name },
                     selected = staticSingle,
                     onSelect = { staticSingle = if (staticSingle == it) null else it },
-                    categoryColor = color,
+                    categoryColor = accent,
                     modifier = Modifier.padding(horizontal = 16.dp)
                 )
             }
@@ -156,7 +149,7 @@ fun ProductModifierSheet(
                     options = dynamicOptions,
                     selected = dynamicSelected,
                     onSelect = { dynamicSelected = if (dynamicSelected?.id == it.id) null else it },
-                    categoryColor = color,
+                    categoryColor = accent,
                     showPrices = showDynamicPrices,
                     formatter = fmt,
                     modifier = Modifier.padding(horizontal = 16.dp)
@@ -168,7 +161,7 @@ fun ProductModifierSheet(
                 PricedMultiChips(
                     items = items,
                     selectedIds = selectedPricedIds,
-                    categoryColor = color,
+                    categoryColor = accent,
                     formatter = fmt,
                     modifier = Modifier.padding(horizontal = 16.dp)
                 )
@@ -250,9 +243,17 @@ fun ProductModifierSheet(
                     },
                     modifier = Modifier.weight(2f).height(50.dp),
                     shape = RoundedCornerShape(12.dp),
-                    colors = ButtonDefaults.buttonColors(containerColor = color)
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = MaterialTheme.colorScheme.primary,
+                        contentColor = MaterialTheme.colorScheme.onPrimary,
+                    )
                 ) {
-                    Icon(Icons.Default.Add, null, Modifier.size(18.dp))
+                    Icon(
+                        Icons.Default.Add,
+                        null,
+                        Modifier.size(18.dp),
+                        tint = MaterialTheme.colorScheme.onPrimary,
+                    )
                     Spacer(Modifier.width(6.dp))
                     Text("Agregar al carrito", fontWeight = FontWeight.Bold)
                 }
@@ -398,10 +399,11 @@ private fun ModifierChip(
     showCheckmark: Boolean = false,
     modifier: Modifier = Modifier
 ) {
-    val onSurface = MaterialTheme.colorScheme.onSurface
-    val bg = if (isSelected) color else color.copy(alpha = 0.16f)
-    val fg = if (isSelected) Color.White else onSurface
-    val borderCol = if (isSelected) color else color.copy(alpha = 0.5f)
+    val scheme = MaterialTheme.colorScheme
+    val onSurface = scheme.onSurface
+    val bg = if (isSelected) color else scheme.surfaceVariant.copy(alpha = 0.65f)
+    val fg = if (isSelected) scheme.onPrimary else onSurface
+    val borderCol = if (isSelected) color else scheme.outline.copy(alpha = 0.45f)
     Surface(
         onClick = onClick,
         modifier = modifier.defaultMinSize(minHeight = 52.dp),
@@ -416,7 +418,12 @@ private fun ModifierChip(
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
             if (showCheckmark && isSelected) {
-                Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(16.dp), tint = Color.White)
+                Icon(
+                    Icons.Default.Check,
+                    contentDescription = null,
+                    modifier = Modifier.size(16.dp),
+                    tint = scheme.onPrimary,
+                )
                 Spacer(Modifier.height(4.dp))
             }
             Text(
