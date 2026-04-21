@@ -294,7 +294,7 @@ fun WaiterMainScreen(
                                         onDeliverOrder = { orderId ->
                                             viewModel.updateOrderStatus(orderId, OrderStatus.DELIVERED)
                                         },
-                                        onLongClickEdit = { viewModel.openEditOrder(order) }
+                                        onLongClickEdit = { viewModel.openEditOrder(order) },
                                     )
                                 }
                             }
@@ -333,7 +333,7 @@ fun WaiterMainScreen(
                                         onDeliverOrder = { orderId ->
                                             viewModel.updateOrderStatus(orderId, OrderStatus.DELIVERED)
                                         },
-                                        onLongClickEdit = { viewModel.openEditOrder(order) }
+                                        onLongClickEdit = { viewModel.openEditOrder(order) },
                                     )
                                 }
                             }
@@ -343,7 +343,6 @@ fun WaiterMainScreen(
             }
         }
     }
-
 }
 
 @OptIn(ExperimentalFoundationApi::class)
