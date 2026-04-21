@@ -905,15 +905,21 @@ fun AddProductToOrderDialog(
             Button(
                 onClick = {
                     val orderItems = selectedProducts.map { (product, quantity) ->
+                        val raw = product.rawId.trim()
+                        val parsed = raw.toLongOrNull()
+                        val productDatabaseId = if (raw.isNotEmpty() && parsed == null) raw else null
+                        val productId = product.id.takeIf { it != 0L } ?: parsed ?: 0L
                         OrderItem(
                             id = 0L,
                             orderId = selectedOrderId,
-                            productId = product.id,
+                            productId = productId,
+                            productDatabaseId = productDatabaseId,
                             productName = product.name,
                             productPrice = product.price,
                             quantity = quantity,
                             subtotal = product.price.multiply(BigDecimal(quantity)),
                             notes = null,
+                            categoryId = product.categoryId,
                             createdAt = kotlinx.datetime.Clock.System.now().toLocalDateTime(kotlinx.datetime.TimeZone.currentSystemDefault())
                         )
                     }

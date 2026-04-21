@@ -98,14 +98,14 @@ class InventoryServiceImpl @Inject constructor(
         }
     }
 
-    override suspend fun validateOrderStockAvailability(items: List<OrderItem>): Result<Map<Long, Boolean>> {
+    override suspend fun validateOrderStockAvailability(items: List<OrderItem>): Result<Map<String, Boolean>> {
         return try {
-            val requirements = items.groupBy { it.productId }
+            val requirements = items.groupBy { it.stockProductKey() }
                 .mapValues { (_, itemList) -> itemList.sumOf { it.quantity } }
-            
-            val availability = inventoryRepository.validateMultipleStockAvailability(requirements)
+
+            val availability = inventoryRepository.validateMultipleStockAvailabilityByDatabaseId(requirements)
             Log.d(TAG, "Stock availability validated for ${items.size} items")
-            
+
             Result.success(availability)
         } catch (e: Exception) {
             Log.e(TAG, "Error validating stock availability", e)
@@ -118,14 +118,15 @@ class InventoryServiceImpl @Inject constructor(
             Log.d(TAG, "Reverting stock for order ${order.id}")
             
             order.items.forEach { item ->
-                val product = productRepository.getProductById(item.productId)
+                val product = productRepository.getProductByDatabaseId(item.stockProductKey())
+                    ?: (if (item.productId != 0L) productRepository.getProductById(item.productId) else null)
                 if (product != null) {
                     val currentStock = product.stockQuantity ?: 0
                     val newStock = currentStock + item.quantity // Add back the quantity
                     
                     // Create stock movement for the reversion
                     val movement = StockMovement(
-                        productId = item.productId,
+                        productId = product.id,
                         productName = item.productName,
                         movementType = StockMovementType.ADJUSTMENT,
                         quantity = item.quantity, // Positive quantity (adding back)
@@ -185,26 +186,28 @@ class InventoryServiceImpl @Inject constructor(
             val itemAvailability = mutableMapOf<Long, ItemStockStatus>()
             val warnings = mutableListOf<String>()
             var allAvailable = true
-            
-            // Group items by product to get total required quantity
-            val requirements = items.groupBy { it.productId }
-                .mapValues { (_, itemList) -> 
+
+            val requirements = items.groupBy { it.stockProductKey() }
+                .mapValues { (_, itemList) ->
                     itemList.sumOf { it.quantity } to itemList.first().productName
                 }
-            
-            requirements.forEach { (productId, requirementInfo) ->
+
+            requirements.forEach { (productKey, requirementInfo) ->
                 val (requiredQuantity, productName) = requirementInfo
-                val product = productRepository.getProductById(productId)
-                
+                val product = productRepository.getProductByDatabaseId(productKey)
+                    ?: productKey.toLongOrNull()?.let { productRepository.getProductById(it) }
+
+                val mapKey = productKey.toLongOrNull() ?: kotlin.math.abs(productKey.hashCode().toLong())
+
                 if (product != null) {
                     val availableStock = product.stockQuantity ?: 0
                     val minStockLevel = product.minStockLevel ?: 5
                     val isAvailable = availableStock >= requiredQuantity
                     val isLowStock = availableStock <= minStockLevel
                     val willBeOutOfStock = (availableStock - requiredQuantity) <= 0
-                    
-                    itemAvailability[productId] = ItemStockStatus(
-                        productId = productId,
+
+                    itemAvailability[mapKey] = ItemStockStatus(
+                        productId = product.id,
                         productName = productName,
                         requestedQuantity = requiredQuantity,
                         availableQuantity = availableStock,
@@ -212,7 +215,7 @@ class InventoryServiceImpl @Inject constructor(
                         isLowStock = isLowStock,
                         willBeOutOfStock = willBeOutOfStock
                     )
-                    
+
                     if (!isAvailable) {
                         allAvailable = false
                         warnings.add("Insufficient stock for $productName (need $requiredQuantity, have $availableStock)")
@@ -223,9 +226,9 @@ class InventoryServiceImpl @Inject constructor(
                     }
                 } else {
                     allAvailable = false
-                    warnings.add("Product with ID $productId not found")
-                    itemAvailability[productId] = ItemStockStatus(
-                        productId = productId,
+                    warnings.add("Product with ID $productKey not found")
+                    itemAvailability[mapKey] = ItemStockStatus(
+                        productId = mapKey,
                         productName = productName,
                         requestedQuantity = requiredQuantity,
                         availableQuantity = 0,
@@ -256,14 +259,15 @@ class InventoryServiceImpl @Inject constructor(
      */
     private suspend fun updateStockForCompletedOrder(order: Order, userId: Long) {
         order.items.forEach { item ->
-            val product = productRepository.getProductById(item.productId)
+            val product = productRepository.getProductByDatabaseId(item.stockProductKey())
+                ?: (if (item.productId != 0L) productRepository.getProductById(item.productId) else null)
             if (product != null) {
                 val currentStock = product.stockQuantity ?: 0
                 val newStock = maxOf(0, currentStock - item.quantity) // Ensure stock doesn't go negative
                 
                 // Create stock movement for the sale
                 val movement = StockMovement(
-                    productId = item.productId,
+                    productId = product.id,
                     productName = item.productName,
                     movementType = StockMovementType.SALE,
                     quantity = -item.quantity, // Negative quantity for sale (outgoing)

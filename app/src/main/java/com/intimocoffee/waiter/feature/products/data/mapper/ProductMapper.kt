@@ -12,6 +12,7 @@ class ProductMapper @Inject constructor() {
     fun toDomain(entity: ProductEntity): Product {
         return Product(
             id = entity.id.toLongOrNull() ?: 0L,
+            rawId = entity.id,
             name = entity.name,
             description = entity.description,
             price = BigDecimal(entity.price),
@@ -30,7 +31,11 @@ class ProductMapper @Inject constructor() {
     
     fun toEntity(product: Product): ProductEntity {
         return ProductEntity(
-            id = if (product.id == 0L) generateId() else product.id.toString(),
+            id = when {
+                product.rawId.isNotBlank() -> product.rawId
+                product.id == 0L -> generateId()
+                else -> product.id.toString()
+            },
             name = product.name,
             description = product.description,
             price = product.price.toString(),

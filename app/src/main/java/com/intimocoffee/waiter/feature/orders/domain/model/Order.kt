@@ -28,6 +28,7 @@ data class OrderItem(
     val id: Long = 0,
     val orderId: Long,
     val productId: Long,
+    val productDatabaseId: String? = null,
     val productName: String,
     val productPrice: BigDecimal,
     val quantity: Int,
@@ -42,6 +43,9 @@ data class OrderItem(
     val preparationTimeMinutes: Int? = null, // Tiempo real de preparación
     val createdAt: LocalDateTime
 ) {
+    fun stockProductKey(): String =
+        productDatabaseId?.takeIf { it.isNotBlank() } ?: productId.toString()
+
     val isFood: Boolean
         get() = categoryId in listOf(3L, 4L, 5L) // Categorías de alimentos
     

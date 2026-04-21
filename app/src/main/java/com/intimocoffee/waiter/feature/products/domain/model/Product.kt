@@ -5,6 +5,8 @@ import java.math.RoundingMode
 
 data class Product(
     val id: Long,
+    /** ID real en BD (numérico o UUID). */
+    val rawId: String = id.toString(),
     val name: String,
     val description: String?,
     val price: BigDecimal,
@@ -18,6 +20,9 @@ data class Product(
     /** Porcentaje de IVA (ej. 16). null o 0 = sin impuesto en el precio. */
     val taxRatePercent: BigDecimal? = null
 ) {
+    /** Clave estable para líneas de carrito (evita colisiones cuando [id] es 0 con UUID). */
+    fun cartLineKey(): String = rawId.ifBlank { id.toString() }
+
     val isInStock: Boolean
         get() = stockQuantity?.let { it > 0 } ?: true
     

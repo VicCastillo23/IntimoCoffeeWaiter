@@ -122,6 +122,22 @@ class ProductRepositoryImpl @Inject constructor(
             null
         }
     }
+
+    override suspend fun getProductByDatabaseId(id: String): Product? {
+        val key = id.trim()
+        if (key.isEmpty()) return null
+        return try {
+            val result = remoteOrderService.getProductsFromServer()
+            if (result.isSuccess) {
+                val list = result.getOrNull()?.toProductDomainModels().orEmpty()
+                val byRaw = list.find { it.rawId == key }
+                if (byRaw != null) return byRaw
+                key.toLongOrNull()?.let { lid -> list.find { it.id == lid } }
+            } else null
+        } catch (_: Exception) {
+            null
+        }
+    }
     
     override fun searchProducts(query: String): Flow<List<Product>> = flow {
         try {

@@ -191,7 +191,7 @@ fun CreateOrderScreen(
 
         // 5. Card de fidelidad (animada)
         AnimatedVisibility(
-            visible = uiState.customerPhone.length >= 7 && !uiState.isFidelityLoading,
+            visible = uiState.customerPhone.length >= 10 && !uiState.isFidelityLoading,
             enter = expandVertically(animationSpec = tween(220)) + fadeIn(tween(220)),
             exit = shrinkVertically(animationSpec = tween(180)) + fadeOut(tween(180))
         ) {
@@ -501,6 +501,7 @@ private fun PhoneSearchRow(
             }
             Button(
                 onClick = onSearch,
+                enabled = phone.length >= 10 && !isLoading,
                 shape = RoundedCornerShape(10.dp),
                 modifier = Modifier.height(52.dp),
                 contentPadding = PaddingValues(horizontal = 14.dp)
@@ -743,8 +744,8 @@ private fun CartSummaryPanel(
     taxIncluded: BigDecimal,
     total: BigDecimal,
     isCreateEnabled: Boolean,
-    onUpdateQuantity: (Long, Int) -> Unit,
-    onRemoveItem: (Long) -> Unit,
+    onUpdateQuantity: (String, Int) -> Unit,
+    onRemoveItem: (String) -> Unit,
     onCreateOrder: () -> Unit
 ) {
     val fmt = NumberFormat.getCurrencyInstance(Locale("es", "CO"))
@@ -883,8 +884,8 @@ private fun CartSummaryPanel(
 @Composable
 private fun CartItemRow(
     item: CartItem,
-    onUpdateQuantity: (Long, Int) -> Unit,
-    onRemove: (Long) -> Unit
+    onUpdateQuantity: (String, Int) -> Unit,
+    onRemove: (String) -> Unit
 ) {
     val fmt = NumberFormat.getCurrencyInstance(Locale("es", "CO"))
     val color = neutralAccent()
@@ -926,8 +927,8 @@ private fun CartItemRow(
         Row(verticalAlignment = Alignment.CenterVertically) {
             IconButton(
                 onClick = {
-                    if (item.quantity == 1) onRemove(item.product.id)
-                    else onUpdateQuantity(item.product.id, item.quantity - 1)
+                    if (item.quantity == 1) onRemove(item.product.cartLineKey())
+                    else onUpdateQuantity(item.product.cartLineKey(), item.quantity - 1)
                 },
                 modifier = Modifier.size(28.dp)
             ) {
@@ -947,7 +948,7 @@ private fun CartItemRow(
                 textAlign = TextAlign.Center
             )
             IconButton(
-                onClick = { onUpdateQuantity(item.product.id, item.quantity + 1) },
+                onClick = { onUpdateQuantity(item.product.cartLineKey(), item.quantity + 1) },
                 modifier = Modifier.size(28.dp)
             ) {
                 Icon(Icons.Default.Add, null, Modifier.size(14.dp), tint = color)

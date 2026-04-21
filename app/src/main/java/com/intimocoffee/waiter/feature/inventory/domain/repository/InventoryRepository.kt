@@ -44,6 +44,9 @@ interface InventoryRepository {
     // Stock Validation
     suspend fun validateStockAvailability(productId: Long, requiredQuantity: Int): Boolean
     suspend fun validateMultipleStockAvailability(requirements: Map<Long, Int>): Map<Long, Boolean>
+
+    suspend fun validateStockAvailabilityByDatabaseId(productKey: String, requiredQuantity: Int): Boolean
+    suspend fun validateMultipleStockAvailabilityByDatabaseId(requirements: Map<String, Int>): Map<String, Boolean>
     
     // Low Stock Notifications
     suspend fun generateLowStockAlerts(): List<StockAlert>

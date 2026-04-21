@@ -335,6 +335,17 @@ class InventoryRepositoryImpl @Inject constructor(
         }
     }
 
+    override suspend fun validateStockAvailabilityByDatabaseId(productKey: String, requiredQuantity: Int): Boolean {
+        val product = productRepository.getProductByDatabaseId(productKey) ?: return false
+        return (product.stockQuantity ?: 0) >= requiredQuantity
+    }
+
+    override suspend fun validateMultipleStockAvailabilityByDatabaseId(requirements: Map<String, Int>): Map<String, Boolean> {
+        return requirements.mapValues { (key, quantity) ->
+            validateStockAvailabilityByDatabaseId(key, quantity)
+        }
+    }
+
     override suspend fun generateLowStockAlerts(): List<StockAlert> {
         val allProducts = productRepository.getAllActiveProducts().first()
         

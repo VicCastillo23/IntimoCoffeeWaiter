@@ -7,6 +7,8 @@ interface ProductRepository {
     fun getAllActiveProducts(): Flow<List<Product>>
     fun getProductsByCategory(categoryId: Long): Flow<List<Product>>
     suspend fun getProductById(id: Long): Product?
+
+    suspend fun getProductByDatabaseId(id: String): Product?
     fun searchProducts(query: String): Flow<List<Product>>
     suspend fun getProductByBarcode(barcode: String): Product?
     suspend fun createProduct(product: Product): Boolean

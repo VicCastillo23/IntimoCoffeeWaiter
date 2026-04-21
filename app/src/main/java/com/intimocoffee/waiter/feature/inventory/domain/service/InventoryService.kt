@@ -34,7 +34,7 @@ interface InventoryService {
     /**
      * Validates stock availability before allowing order creation/modification.
      */
-    suspend fun validateOrderStockAvailability(items: List<OrderItem>): Result<Map<Long, Boolean>>
+    suspend fun validateOrderStockAvailability(items: List<OrderItem>): Result<Map<String, Boolean>>
     
     /**
      * Reverts stock changes when an order is cancelled.

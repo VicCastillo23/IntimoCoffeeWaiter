@@ -128,6 +128,7 @@ class CreateOrderViewModel @Inject constructor(
     private val authRepository: AuthRepository,
     private val fidelityRepository: FidelityRepository,
 ) : ViewModel() {
+    private fun normalizePhone(raw: String): String = raw.filter { it.isDigit() }.take(15)
 
     private var fidelityLookupJob: Job? = null
 
@@ -287,13 +288,14 @@ class CreateOrderViewModel @Inject constructor(
     }
 
     fun updatePhone(phone: String) {
-        _uiState.value = _uiState.value.copy(customerPhone = phone, fidelityCustomer = null, fidelityLookupError = null)
-        if (phone.length >= 7) {
+        val normalized = normalizePhone(phone)
+        _uiState.value = _uiState.value.copy(customerPhone = normalized, fidelityCustomer = null, fidelityLookupError = null)
+        if (normalized.length >= 10) {
             fidelityLookupJob?.cancel()
             fidelityLookupJob = viewModelScope.launch {
                 delay(400) // debounce
                 _uiState.value = _uiState.value.copy(isFidelityLoading = true)
-                val customer = fidelityRepository.getByPhone(phone)
+                val customer = fidelityRepository.getByPhone(normalized)
                 _uiState.value = _uiState.value.copy(
                     fidelityCustomer = customer,
                     isFidelityLoading = false
@@ -303,8 +305,9 @@ class CreateOrderViewModel @Inject constructor(
     }
 
     fun triggerFidelitySearch() {
-        val phone = _uiState.value.customerPhone
-        if (phone.length >= 7) {
+        val phone = normalizePhone(_uiState.value.customerPhone)
+        _uiState.value = _uiState.value.copy(customerPhone = phone)
+        if (phone.length >= 10) {
             fidelityLookupJob?.cancel()
             fidelityLookupJob = viewModelScope.launch {
                 _uiState.value = _uiState.value.copy(isFidelityLoading = true, fidelityLookupError = null)
@@ -407,11 +410,11 @@ class CreateOrderViewModel @Inject constructor(
         val unitPrice = product.price.add(priceExtra)
         val currentState = _uiState.value
         val existingItem = currentState.cartItems.find {
-            it.product.id == product.id && it.notes == notes
+            it.product.cartLineKey() == product.cartLineKey() && it.notes == notes
         }
         val updatedCart = if (existingItem != null) {
             currentState.cartItems.map { cartItem ->
-                if (cartItem.product.id == product.id && cartItem.notes == notes)
+                if (cartItem.product.cartLineKey() == product.cartLineKey() && cartItem.notes == notes)
                     cartItem.withQuantity(cartItem.quantity + 1)
                 else cartItem
             }
@@ -424,11 +427,11 @@ class CreateOrderViewModel @Inject constructor(
     /** Agrega directamente sin modificadores (botón + rápido). */
     fun addProductToCart(product: Product) {
         val currentState = _uiState.value
-        val existingItem = currentState.cartItems.find { it.product.id == product.id && it.notes == null }
+        val existingItem = currentState.cartItems.find { it.product.cartLineKey() == product.cartLineKey() && it.notes == null }
         
         val updatedCart = if (existingItem != null) {
             currentState.cartItems.map { cartItem ->
-                if (cartItem.product.id == product.id && cartItem.notes == null) {
+                if (cartItem.product.cartLineKey() == product.cartLineKey() && cartItem.notes == null) {
                     cartItem.withQuantity(cartItem.quantity + 1)
                 } else {
                     cartItem
@@ -444,13 +447,13 @@ class CreateOrderViewModel @Inject constructor(
         )
     }
 
-    fun updateCartItemQuantity(productId: Long, quantity: Int) {
+    fun updateCartItemQuantity(productKey: String, quantity: Int) {
         val currentState = _uiState.value
         val updatedCart = if (quantity <= 0) {
-            currentState.cartItems.filter { it.product.id != productId }
+            currentState.cartItems.filter { it.product.cartLineKey() != productKey }
         } else {
             currentState.cartItems.map { cartItem ->
-                if (cartItem.product.id == productId) {
+                if (cartItem.product.cartLineKey() == productKey) {
                     cartItem.withQuantity(quantity)
                 } else {
                     cartItem
@@ -461,10 +464,10 @@ class CreateOrderViewModel @Inject constructor(
         _uiState.value = currentState.copy(cartItems = updatedCart)
     }
 
-    fun updateCartItemNotes(productId: Long, notes: String) {
+    fun updateCartItemNotes(productKey: String, notes: String) {
         val currentState = _uiState.value
         val updatedCart = currentState.cartItems.map { cartItem ->
-            if (cartItem.product.id == productId) {
+            if (cartItem.product.cartLineKey() == productKey) {
                 cartItem.withNotes(notes.takeIf { it.isNotBlank() })
             } else {
                 cartItem
@@ -474,9 +477,9 @@ class CreateOrderViewModel @Inject constructor(
         _uiState.value = currentState.copy(cartItems = updatedCart)
     }
 
-    fun removeCartItem(productId: Long) {
+    fun removeCartItem(productKey: String) {
         val currentState = _uiState.value
-        val updatedCart = currentState.cartItems.filter { it.product.id != productId }
+        val updatedCart = currentState.cartItems.filter { it.product.cartLineKey() != productKey }
         _uiState.value = currentState.copy(cartItems = updatedCart)
     }
 
@@ -520,15 +523,21 @@ class CreateOrderViewModel @Inject constructor(
                 
                 val now = Clock.System.now().toLocalDateTime(TimeZone.currentSystemDefault())
                 val orderItems = currentState.cartItems.map { cartItem ->
+                    val raw = cartItem.product.rawId.trim()
+                    val parsed = raw.toLongOrNull()
+                    val productDatabaseId = if (raw.isNotEmpty() && parsed == null) raw else null
+                    val productId = cartItem.product.id.takeIf { it != 0L } ?: parsed ?: 0L
                     OrderItem(
                         id = 0L,
                         orderId = 0L,
-                        productId = cartItem.product.id,
+                        productId = productId,
+                        productDatabaseId = productDatabaseId,
                         productName = cartItem.product.name,
                         productPrice = cartItem.unitPrice,
                         quantity = cartItem.quantity,
                         subtotal = cartItem.subtotal,
                         notes = cartItem.notes,
+                        categoryId = cartItem.product.categoryId,
                         createdAt = now
                     )
                 }

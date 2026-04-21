@@ -43,6 +43,7 @@ class RemoteOrderService @Inject constructor(
             val createOrderItems = cartItems.map { cartItem ->
                 CreateOrderItemRequest(
                     productId = cartItem.product.id,
+                    productIdStr = cartItem.product.rawId.trim().takeIf { it.isNotEmpty() },
                     productName = cartItem.product.name,
                     quantity = cartItem.quantity,
                     unitPrice = cartItem.unitPrice.toString(),
@@ -86,6 +87,7 @@ class RemoteOrderService @Inject constructor(
                     val retryCreateOrderItems = cartItems.map { cartItem ->
                         CreateOrderItemRequest(
                             productId = cartItem.product.id,
+                            productIdStr = cartItem.product.rawId.trim().takeIf { it.isNotEmpty() },
                             productName = cartItem.product.name,
                             quantity = cartItem.quantity,
                             unitPrice = cartItem.unitPrice.toString(),
@@ -413,6 +415,7 @@ class RemoteOrderService @Inject constructor(
         return try {
             val req = CreateOrderItemRequest(
                 productId = item.productId,
+                productIdStr = item.productDatabaseId?.trim()?.takeIf { it.isNotEmpty() },
                 productName = item.productName,
                 quantity = item.quantity,
                 unitPrice = item.productPrice.toPlainString(),
@@ -433,6 +436,7 @@ class RemoteOrderService @Inject constructor(
                     retrofitProvider.rediscoverServer()
                     val req = CreateOrderItemRequest(
                         productId = item.productId,
+                        productIdStr = item.productDatabaseId?.trim()?.takeIf { it.isNotEmpty() },
                         productName = item.productName,
                         quantity = item.quantity,
                         unitPrice = item.productPrice.toPlainString(),

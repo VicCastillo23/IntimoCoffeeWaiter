@@ -47,7 +47,7 @@ class OrderRepositoryImpl @Inject constructor(
             }
             
             val stockAvailability = stockAvailabilityResult.getOrNull() ?: emptyMap()
-            val unavailableProducts = items.filter { stockAvailability[it.productId] == false }
+            val unavailableProducts = items.filter { stockAvailability[it.stockProductKey()] == false }
             if (unavailableProducts.isNotEmpty()) {
                 Log.w("OrderRepository", "Cannot create order: Insufficient stock for products: ${unavailableProducts.map { it.productName }}")
                 return 0L
@@ -315,8 +315,8 @@ class OrderRepositoryImpl @Inject constructor(
             }
             
             val stockAvailability = stockAvailabilityResult.getOrNull() ?: emptyMap()
-            if (stockAvailability[item.productId] == false) {
-                Log.w("OrderRepository", "Insufficient stock for product ${item.productId} (${item.productName}): requested ${item.quantity}")
+            if (stockAvailability[item.stockProductKey()] == false) {
+                Log.w("OrderRepository", "Insufficient stock for product ${item.stockProductKey()} (${item.productName}): requested ${item.quantity}")
                 return false
             }
             

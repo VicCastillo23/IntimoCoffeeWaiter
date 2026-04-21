@@ -134,29 +134,37 @@ class OrderMapper @Inject constructor(
             "Producto ${itemEntity.productId}"
         }
         
+        val rawPid = itemEntity.productId
+        val parsedPid = rawPid.toLongOrNull()
         return OrderItem(
             id = itemEntity.id.toLongOrNull() ?: 0L,
             orderId = itemEntity.orderId.toLongOrNull() ?: 0L,
-            productId = itemEntity.productId.toLongOrNull() ?: 0L,
+            productId = parsedPid ?: 0L,
+            productDatabaseId = if (parsedPid == null && rawPid.isNotBlank()) rawPid else null,
             productName = productName,
             productPrice = BigDecimal(itemEntity.unitPrice),
             quantity = itemEntity.quantity,
             subtotal = BigDecimal(itemEntity.totalPrice),
             notes = itemEntity.notes,
+            categoryId = itemEntity.categoryId ?: 0L,
             createdAt = Instant.fromEpochMilliseconds(itemEntity.createdAt).toLocalDateTime(TimeZone.currentSystemDefault())
         )
     }
     
     fun toDomain(itemEntity: OrderItemEntity): OrderItem {
+        val rawPid = itemEntity.productId
+        val parsedPid = rawPid.toLongOrNull()
         return OrderItem(
             id = itemEntity.id.toLongOrNull() ?: 0L,
             orderId = itemEntity.orderId.toLongOrNull() ?: 0L,
-            productId = itemEntity.productId.toLongOrNull() ?: 0L,
+            productId = parsedPid ?: 0L,
+            productDatabaseId = if (parsedPid == null && rawPid.isNotBlank()) rawPid else null,
             productName = "Producto", // Not available in current entity, would need to fetch from product table
             productPrice = BigDecimal(itemEntity.unitPrice),
             quantity = itemEntity.quantity,
             subtotal = BigDecimal(itemEntity.totalPrice),
             notes = itemEntity.notes,
+            categoryId = itemEntity.categoryId ?: 0L,
             createdAt = Instant.fromEpochMilliseconds(itemEntity.createdAt).toLocalDateTime(TimeZone.currentSystemDefault())
         )
     }
@@ -185,7 +193,9 @@ class OrderMapper @Inject constructor(
         return OrderItemEntity(
             id = if (orderItem.id == 0L) UUID.randomUUID().toString() else orderItem.id.toString(),
             orderId = if (orderItem.orderId == 0L) UUID.randomUUID().toString() else "order_${orderItem.orderId}",
-            productId = orderItem.productId.toString(),
+            productId = orderItem.productDatabaseId?.takeIf { it.isNotBlank() }
+                ?: orderItem.productId.toString(),
+            categoryId = orderItem.categoryId.takeIf { it != 0L },
             quantity = orderItem.quantity,
             unitPrice = orderItem.productPrice.toString(),
             totalPrice = orderItem.subtotal.toString(),

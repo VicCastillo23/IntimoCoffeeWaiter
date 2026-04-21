@@ -101,7 +101,8 @@ data class CreateOrderRequest(
 
 @Serializable
 data class CreateOrderItemRequest(
-    @SerialName("productId") val productId: Long,
+    @SerialName("productId") val productId: Long = 0,
+    @SerialName("productIdStr") val productIdStr: String? = null,
     @SerialName("productName") val productName: String,
     @SerialName("quantity") val quantity: Int,
     @SerialName("unitPrice") val unitPrice: String, // BigDecimal as String
@@ -212,6 +213,7 @@ data class LoginResponse(
 @Serializable
 data class ProductResponse(
     @SerialName("id") val id: Long,
+    @SerialName("databaseId") val databaseId: String? = null,
     @SerialName("name") val name: String,
     @SerialName("description") val description: String?,
     @SerialName("price") val price: String,

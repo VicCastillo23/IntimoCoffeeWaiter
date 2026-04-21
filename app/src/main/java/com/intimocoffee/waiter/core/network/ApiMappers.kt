@@ -20,8 +20,11 @@ object ApiMappers {
         val taxRate = response.taxRatePercent
             ?.takeIf { it.isNotBlank() }
             ?.let { runCatching { BigDecimal(it) }.getOrNull() }
+        val rawId = response.databaseId?.trim()?.takeIf { it.isNotEmpty() } ?: response.id.toString()
+        val parsedId = response.id.takeIf { it != 0L } ?: rawId.toLongOrNull()
         return Product(
-            id = response.id,
+            id = parsedId ?: 0L,
+            rawId = rawId,
             name = response.name,
             description = response.description,
             price = BigDecimal(response.price),
