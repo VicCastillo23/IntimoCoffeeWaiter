@@ -42,8 +42,8 @@ fun ProductModifierSheet(
 ) {
     val fmt = NumberFormat.getCurrencyInstance(Locale("es", "MX"))
     val catId = product.categoryId
-    // Misma paleta que IntimoCoffeeApp (evita chips por categoría de colores distintos).
-    val accent = MaterialTheme.colorScheme.primary
+    // Estilo neutro como en la app principal (sin color por categoría).
+    val accent = MaterialTheme.colorScheme.onSurface
     val dynamicOptions = modifierOptions[catId] ?: emptyList()
 
     val showDynamicSingle = (catId in ESPECIALIDAD_IDS || catId in FRIOS_IDS) && dynamicOptions.isNotEmpty()
@@ -118,13 +118,13 @@ fun ProductModifierSheet(
                 }
                 Surface(
                     shape = RoundedCornerShape(12.dp),
-                    color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.55f)
+                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f)
                 ) {
                     Text(
                         text = "Personalizar",
                         modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
                         style = MaterialTheme.typography.labelMedium,
-                        color = MaterialTheme.colorScheme.onPrimaryContainer,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                         fontWeight = FontWeight.SemiBold
                     )
                 }
@@ -244,15 +244,15 @@ fun ProductModifierSheet(
                     modifier = Modifier.weight(2f).height(50.dp),
                     shape = RoundedCornerShape(12.dp),
                     colors = ButtonDefaults.buttonColors(
-                        containerColor = MaterialTheme.colorScheme.primary,
-                        contentColor = MaterialTheme.colorScheme.onPrimary,
+                        containerColor = MaterialTheme.colorScheme.onSurface,
+                        contentColor = MaterialTheme.colorScheme.surface,
                     )
                 ) {
                     Icon(
                         Icons.Default.Add,
                         null,
                         Modifier.size(18.dp),
-                        tint = MaterialTheme.colorScheme.onPrimary,
+                        tint = MaterialTheme.colorScheme.surface,
                     )
                     Spacer(Modifier.width(6.dp))
                     Text("Agregar al carrito", fontWeight = FontWeight.Bold)
@@ -281,13 +281,13 @@ private fun SingleSelectChips(
     categoryColor: Color,
     modifier: Modifier = Modifier
 ) {
-    val cols = 2
+    val cols = 3
     val rows = options.chunked(cols)
-    Column(modifier = modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+    Column(modifier = modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(6.dp)) {
         rows.forEach { rowItems ->
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
             ) {
                 rowItems.forEach { opt ->
                     Box(modifier = Modifier.weight(1f)) {
@@ -318,18 +318,18 @@ private fun DynamicSingleSelectChips(
     formatter: NumberFormat,
     modifier: Modifier = Modifier
 ) {
-    val cols = 2
+    val cols = 3
     val rows = options.chunked(cols)
-    Column(modifier = modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+    Column(modifier = modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(6.dp)) {
         rows.forEach { rowItems ->
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
             ) {
                 rowItems.forEach { opt ->
                     val priceExtra = opt.priceExtra.toBigDecimalOrNull() ?: BigDecimal.ZERO
                     val suffix = if (showPrices && priceExtra > BigDecimal.ZERO)
-                        " +${formatter.format(priceExtra)}" else ""
+                        " ${formatter.format(priceExtra)}" else ""
                     Box(modifier = Modifier.weight(1f)) {
                         ModifierChip(
                             label = "${opt.name}$suffix",
@@ -356,17 +356,17 @@ private fun PricedMultiChips(
     formatter: NumberFormat,
     modifier: Modifier = Modifier
 ) {
-    val cols = 2
+    val cols = 3
     val rows = items.chunked(cols)
-    Column(modifier = modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+    Column(modifier = modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(6.dp)) {
         rows.forEach { rowItems ->
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
             ) {
                 rowItems.forEach { opt ->
                     val price = opt.priceExtra.toBigDecimalOrNull() ?: BigDecimal.ZERO
-                    val suffix = if (price > BigDecimal.ZERO) " +${formatter.format(price)}" else ""
+                    val suffix = if (price > BigDecimal.ZERO) " ${formatter.format(price)}" else ""
                     val label = "${opt.name}$suffix"
                     val isOn = selectedIds.contains(opt.id)
                     Box(modifier = Modifier.weight(1f)) {
@@ -401,12 +401,12 @@ private fun ModifierChip(
 ) {
     val scheme = MaterialTheme.colorScheme
     val onSurface = scheme.onSurface
-    val bg = if (isSelected) color else scheme.surfaceVariant.copy(alpha = 0.65f)
-    val fg = if (isSelected) scheme.onPrimary else onSurface
+    val bg = if (isSelected) scheme.onSurface else scheme.surfaceVariant.copy(alpha = 0.65f)
+    val fg = if (isSelected) scheme.surface else onSurface
     val borderCol = if (isSelected) color else scheme.outline.copy(alpha = 0.45f)
     Surface(
         onClick = onClick,
-        modifier = modifier.defaultMinSize(minHeight = 52.dp),
+        modifier = modifier.defaultMinSize(minHeight = 42.dp),
         shape = RoundedCornerShape(12.dp),
         color = bg,
         border = BorderStroke(1.dp, borderCol)
@@ -414,7 +414,7 @@ private fun ModifierChip(
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 10.dp, vertical = 10.dp),
+                .padding(horizontal = 8.dp, vertical = 7.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
             if (showCheckmark && isSelected) {
@@ -422,7 +422,7 @@ private fun ModifierChip(
                     Icons.Default.Check,
                     contentDescription = null,
                     modifier = Modifier.size(16.dp),
-                    tint = scheme.onPrimary,
+                    tint = scheme.surface,
                 )
                 Spacer(Modifier.height(4.dp))
             }
@@ -432,7 +432,7 @@ private fun ModifierChip(
                 fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Medium,
                 color = fg,
                 textAlign = TextAlign.Center,
-                maxLines = 4,
+                maxLines = 3,
                 overflow = TextOverflow.Ellipsis,
                 lineHeight = MaterialTheme.typography.bodySmall.lineHeight,
                 modifier = Modifier.fillMaxWidth()

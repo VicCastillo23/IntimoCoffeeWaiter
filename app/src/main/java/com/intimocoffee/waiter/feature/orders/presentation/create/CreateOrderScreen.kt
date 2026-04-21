@@ -52,21 +52,7 @@ import java.math.BigDecimal
 import java.text.NumberFormat
 import java.util.*
 
-// ─── Colores por categoría ───────────────────────────────────────────────────
-private val categoryColorMap = mapOf(
-    1L to Color(0xFF8D4925),
-    2L to Color(0xFF1E88E5),
-    3L to Color(0xFFFF6F00),
-    4L to Color(0xFF43A047),
-    5L to Color(0xFFF9A825),
-)
-private val defaultCatColor = Color(0xFF757575)
-
-private fun catColor(id: Long): Color = categoryColorMap[id] ?: defaultCatColor
-
-private fun parseHexColor(hex: String): Color = try {
-    Color(android.graphics.Color.parseColor(hex))
-} catch (_: Exception) { defaultCatColor }
+private fun neutralAccent() = Color(0xFF1F1F1F)
 
 // ─── Pantalla principal ──────────────────────────────────────────────────────
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalComposeUiApi::class)
@@ -277,19 +263,18 @@ fun CreateOrderScreen(
             }
         } else {
             LazyVerticalGrid(
-                columns = GridCells.Adaptive(minSize = 110.dp),
+                columns = GridCells.Adaptive(minSize = 92.dp),
                 modifier = Modifier
                     .weight(1f)
                     .fillMaxWidth(),
-                contentPadding = PaddingValues(8.dp),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp)
+                contentPadding = PaddingValues(6.dp),
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                verticalArrangement = Arrangement.spacedBy(6.dp)
             ) {
                 items(uiState.filteredProducts) { product ->
                     ProductCard(
                         product = product,
-                        onModify = { viewModel.openModifiers(product) },
-                        onQuickAdd = { viewModel.addProductToCart(product) }
+                        onModify = { viewModel.openModifiers(product) }
                     )
                 }
             }
@@ -617,13 +602,12 @@ private fun ParentCategoryChipsRow(
         modifier = Modifier
             .fillMaxWidth()
             .background(MaterialTheme.colorScheme.surface)
-            .padding(horizontal = 10.dp, vertical = 8.dp),
-        horizontalArrangement = Arrangement.spacedBy(8.dp)
+            .padding(horizontal = 10.dp, vertical = 6.dp),
+        horizontalArrangement = Arrangement.spacedBy(6.dp)
     ) {
         item {
             CategoryPill(
                 label = "\uD83C\uDF7D\uFE0F  Todo",
-                color = MaterialTheme.colorScheme.primary,
                 selected = selectedParentId == null,
                 onClick = { onSelect(null) }
             )
@@ -631,7 +615,6 @@ private fun ParentCategoryChipsRow(
         items(parents) { parent ->
             CategoryPill(
                 label = parent.name,
-                color = parseHexColor(parent.color),
                 selected = selectedParentId == parent.id,
                 onClick = { onSelect(parent.id) }
             )
@@ -650,13 +633,12 @@ private fun SubCategoryChipsRow(
         modifier = Modifier
             .fillMaxWidth()
             .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f))
-            .padding(horizontal = 10.dp, vertical = 6.dp),
-        horizontalArrangement = Arrangement.spacedBy(8.dp)
+            .padding(horizontal = 10.dp, vertical = 4.dp),
+        horizontalArrangement = Arrangement.spacedBy(6.dp)
     ) {
         items(subCategories) { cat ->
             CategoryPill(
                 label = cat.name,
-                color = parseHexColor(cat.color),
                 selected = selectedCategoryId == cat.id,
                 onClick = { onSelect(if (selectedCategoryId == cat.id) null else cat.id) }
             )
@@ -666,17 +648,18 @@ private fun SubCategoryChipsRow(
 
 // ─── Chip / pill de categoría ─────────────────────────────────────────────────
 @Composable
-private fun CategoryPill(label: String, color: Color, selected: Boolean, onClick: () -> Unit) {
+private fun CategoryPill(label: String, selected: Boolean, onClick: () -> Unit) {
+    val color = neutralAccent()
     Surface(
         onClick = onClick,
-        shape = RoundedCornerShape(20.dp),
+        shape = RoundedCornerShape(14.dp),
         color = if (selected) color else color.copy(alpha = 0.10f),
         border = BorderStroke(1.dp, color.copy(alpha = if (selected) 1f else 0.25f))
     ) {
         Text(
             text = label,
-            modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp),
-            style = MaterialTheme.typography.bodyMedium,
+            modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+            style = MaterialTheme.typography.labelMedium,
             fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal,
             color = if (selected) Color.White else color
         )
@@ -689,17 +672,16 @@ private fun CategoryPill(label: String, color: Color, selected: Boolean, onClick
 @Composable
 private fun ProductCard(
     product: Product,
-    onModify: () -> Unit,
-    onQuickAdd: () -> Unit
+    onModify: () -> Unit
 ) {
     val fmt = NumberFormat.getCurrencyInstance(Locale("es", "CO"))
     val isOut = product.stockQuantity?.let { it == 0 } ?: false
-    val color = catColor(product.categoryId)
+    val color = neutralAccent()
 
     Card(
         modifier = Modifier
             .fillMaxWidth()
-            .aspectRatio(0.80f)
+            .aspectRatio(1.00f)
             .clickable(enabled = !isOut) { onModify() },
         shape = RoundedCornerShape(10.dp),
         elevation = CardDefaults.cardElevation(if (isOut) 0.dp else 2.dp),
@@ -721,14 +703,14 @@ private fun ProductCard(
             Column(
                 modifier = Modifier
                     .fillMaxSize()
-                    .padding(horizontal = 8.dp, vertical = 7.dp),
+                    .padding(horizontal = 6.dp, vertical = 5.dp),
                 verticalArrangement = Arrangement.SpaceBetween
             ) {
                 Text(
                     text = product.name,
-                    style = MaterialTheme.typography.bodySmall,
+                    style = MaterialTheme.typography.labelSmall,
                     fontWeight = FontWeight.SemiBold,
-                    maxLines = 3,
+                    maxLines = 2,
                     overflow = TextOverflow.Ellipsis,
                     color = if (isOut) MaterialTheme.colorScheme.onSurface.copy(0.35f)
                             else MaterialTheme.colorScheme.onSurface
@@ -741,31 +723,12 @@ private fun ProductCard(
                         fontWeight = FontWeight.Medium
                     )
                 } else {
-                    Row(
-                        Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text(
-                            fmt.format(product.price),
-                            style = MaterialTheme.typography.labelMedium,
-                            fontWeight = FontWeight.Bold,
-                            color = color
-                        )
-                        Surface(
-                            onClick = onQuickAdd,
-                            shape = RoundedCornerShape(6.dp),
-                            color = color.copy(0.12f)
-                        ) {
-                            Icon(
-                                Icons.Default.Add, null,
-                                modifier = Modifier
-                                    .size(22.dp)
-                                    .padding(4.dp),
-                                tint = color
-                            )
-                        }
-                    }
+                    Text(
+                        fmt.format(product.price),
+                        style = MaterialTheme.typography.labelMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = color
+                    )
                 }
             }
         }
@@ -924,7 +887,7 @@ private fun CartItemRow(
     onRemove: (Long) -> Unit
 ) {
     val fmt = NumberFormat.getCurrencyInstance(Locale("es", "CO"))
-    val color = catColor(item.product.categoryId)
+    val color = neutralAccent()
 
     Row(
         modifier = Modifier
