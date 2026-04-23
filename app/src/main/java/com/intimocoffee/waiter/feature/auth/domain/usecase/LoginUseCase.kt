@@ -9,13 +9,13 @@ class LoginUseCase @Inject constructor(
 ) {
     suspend operator fun invoke(username: String, password: String): Result<User> {
         return try {
-            val user = authRepository.login(username, password)
-            if (user != null) {
-                authRepository.saveCurrentUser(user)
-                Result.success(user)
-            } else {
-                Result.failure(Exception("Invalid credentials"))
-            }
+            authRepository.login(username, password).fold(
+                onSuccess = { user ->
+                    authRepository.saveCurrentUser(user)
+                    Result.success(user)
+                },
+                onFailure = { Result.failure(it) }
+            )
         } catch (e: Exception) {
             Result.failure(e)
         }

@@ -3,7 +3,8 @@ package com.intimocoffee.waiter.feature.auth.domain.repository
 import com.intimocoffee.waiter.feature.auth.domain.model.User
 
 interface AuthRepository {
-    suspend fun login(username: String, password: String): User?
+    /** [Result] distingue fallo de red/configuración de credenciales incorrectas. */
+    suspend fun login(username: String, password: String): Result<User>
     suspend fun getCurrentUser(): User?
     suspend fun logout()
     suspend fun isLoggedIn(): Boolean

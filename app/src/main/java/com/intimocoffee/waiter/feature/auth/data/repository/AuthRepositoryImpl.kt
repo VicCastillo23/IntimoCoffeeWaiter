@@ -30,26 +30,42 @@ class AuthRepositoryImpl @Inject constructor(
         private val CURRENT_USER_KEY = stringPreferencesKey("current_user")
     }
     
-    override suspend fun login(username: String, password: String): User? {
+    override suspend fun login(username: String, password: String): Result<User> {
+        val trimmedUser = username.trim()
+        if (trimmedUser.isEmpty()) {
+            return Result.failure(IllegalArgumentException("Indica un usuario"))
+        }
         return try {
-            // Discover (or re-discover) server before every login attempt
             val service = retrofitProvider.discoverAndRefreshService()
-            val response = service.login(LoginRequest(username = username, password = password))
+            if (retrofitProvider.isUsingEmulatorLoopbackOnPhysicalDevice()) {
+                return Result.failure(
+                    Exception(
+                        "No se encontró la tablet POS. En gradle.properties del proyecto mesero: " +
+                            "INTIMO_MAIN_SERVER_URL=http://IP_DE_LA_TABLET:8080/ y Sync + recompilar."
+                    )
+                )
+            }
+            val response = service.login(LoginRequest(username = trimmedUser, password = password))
 
             if (response.isSuccessful) {
                 val body: LoginResponse? = response.body()
                 val userDto: UserLoginResponse? = body?.data
                 if (body?.success == true && userDto != null && userDto.isActive) {
-                    userDto.toDomainModel()
+                    Result.success(userDto.toDomainModel())
                 } else {
-                    null
+                    Result.failure(Exception("Usuario o contraseña incorrectos"))
                 }
             } else {
-                null
+                Result.failure(Exception("Usuario o contraseña incorrectos"))
             }
         } catch (e: Exception) {
             Log.e("AuthRepository", "login failed (¿servidor IntimoCoffeeApp en la misma WiFi?)", e)
-            null
+            Result.failure(
+                Exception(
+                    "No se pudo conectar con la tablet POS (misma Wi‑Fi, app cafetería abierta).",
+                    e
+                )
+            )
         }
     }
     

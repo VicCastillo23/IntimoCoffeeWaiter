@@ -83,7 +83,15 @@ class DynamicRetrofitProvider @Inject constructor(
      * Get current server URL (for debugging / header display).
      */
     fun getCurrentServerUrl(): String = currentBaseUrl
-    
+
+    /**
+     * Tras fallar el descubrimiento, en teléfono/tablet real se reutiliza 10.0.2.2 (solo válido en emulador);
+     * el login contra usuarios del POS nunca funcionará hasta configurar [MAIN_SERVER_BASE_URL].
+     */
+    fun isUsingEmulatorLoopbackOnPhysicalDevice(): Boolean {
+        return !isLikelyEmulator() && currentBaseUrl.contains("10.0.2.2")
+    }
+
     private fun buildService(baseUrl: String): IntimoCoffeeApiService =
         Retrofit.Builder()
             .baseUrl(baseUrl)
