@@ -24,14 +24,18 @@ import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
@@ -70,6 +74,7 @@ fun OrderEditDialog(
 ) {
     val fmt = NumberFormat.getCurrencyInstance(Locale("es", "CO"))
     val canEdit = !OrderStatus.isCompleted(order.status)
+    var productSearch by remember { mutableStateOf("") }
 
     val lines = remember(order.id, order.items) {
         mutableStateListOf<EditableLine>().apply {
@@ -131,6 +136,12 @@ fun OrderEditDialog(
         } else {
             lines[idx] = current.copy(quantity = nextQty)
         }
+    }
+
+    val filteredProducts = remember(products, productSearch) {
+        val q = productSearch.trim().lowercase()
+        if (q.isBlank()) products.take(120)
+        else products.filter { it.name.lowercase().contains(q) }.take(120)
     }
 
     Dialog(
@@ -217,11 +228,18 @@ fun OrderEditDialog(
 
                 Divider()
                 Text("Agregar producto", fontWeight = FontWeight.SemiBold, style = MaterialTheme.typography.titleSmall)
+                OutlinedTextField(
+                    value = productSearch,
+                    onValueChange = { productSearch = it },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true,
+                    label = { Text("Buscar producto") }
+                )
                 LazyColumn(
                     modifier = Modifier.heightIn(max = 220.dp),
                     verticalArrangement = Arrangement.spacedBy(4.dp)
                 ) {
-                    items(products.take(80), key = { it.id }) { p ->
+                    items(filteredProducts, key = { it.id }) { p ->
                         val pendingQty = lines
                             .filter { it.itemId == 0L && it.productId == p.id }
                             .sumOf { it.quantity }

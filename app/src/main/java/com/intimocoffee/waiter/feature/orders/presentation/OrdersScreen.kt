@@ -86,8 +86,12 @@ fun OrdersScreen(
                 )
             }
             
-            // Exclude ARCHIVED status from filters to maintain clean day impression
-            items(OrderStatus.values().filter { it != OrderStatus.ARCHIVED }) { status ->
+            // Hide PAID/ARCHIVED from viewer filters; keep daily view focused on active flow.
+            items(
+                OrderStatus.values().filter {
+                    it != OrderStatus.ARCHIVED && it != OrderStatus.PAID
+                }
+            ) { status ->
                 FilterChip(
                     onClick = { viewModel.filterByStatus(status) },
                     label = { Text(status.displayName) },
@@ -338,7 +342,9 @@ fun OrderCard(
 
                 // Action buttons based on status
                 Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                    val validTransitions = OrderStatus.getValidTransitions(order.status)
+                    val validTransitions = OrderStatus
+                        .getValidTransitions(order.status)
+                        .filter { it != OrderStatus.PAID }
                     
                     validTransitions.forEach { nextStatus ->
                         if (nextStatus != OrderStatus.CANCELLED) {
