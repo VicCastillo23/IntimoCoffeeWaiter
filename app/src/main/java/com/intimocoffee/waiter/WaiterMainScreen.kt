@@ -28,7 +28,7 @@ import java.math.BigDecimal
 import java.text.NumberFormat
 import java.util.*
 
-private enum class WaiterTab { MIS_ORDENES, LISTAS }
+private enum class WaiterTab { MIS_ORDENES, LISTAS, ENTREGADAS }
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
@@ -71,6 +71,8 @@ fun WaiterMainScreen(
     val waiterOrders = uiState.orders
         .filter { order ->
             (currentUserId == null || order.createdBy == currentUserId) &&
+            order.status != OrderStatus.DELIVERED &&
+            order.status != OrderStatus.PAID &&
             !OrderStatus.isCompleted(order.status)
         }
         .sortedByDescending { it.createdAt }
@@ -80,8 +82,17 @@ fun WaiterMainScreen(
         .filter { it.status == OrderStatus.READY }
         .sortedBy { it.createdAt }
 
+    // Órdenes ya entregadas (para validar con la mesa)
+    val deliveredOrders = uiState.orders
+        .filter { order ->
+            order.status == OrderStatus.DELIVERED &&
+                (currentUserId == null || order.createdBy == currentUserId)
+        }
+        .sortedByDescending { it.updatedAt }
+
     // Auto-cambiar a "Listas" si hay nuevas
     val readyCount = readyOrders.size
+    val deliveredCount = deliveredOrders.size
 
     // Sonido de campana cuando hay nuevas órdenes listas
     var prevReadyCount by remember { mutableStateOf(-1) }
@@ -101,8 +112,8 @@ fun WaiterMainScreen(
                 onClick = onNavigateToCreateOrder,
                 containerColor = MaterialTheme.colorScheme.primary,
                 contentColor = MaterialTheme.colorScheme.onPrimary,
-                icon = { Icon(Icons.Default.Add, contentDescription = null) },
-                text = { Text("Nueva Orden", fontWeight = FontWeight.SemiBold) }
+                icon = { Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(20.dp)) },
+                text = { Text("Nueva", fontWeight = FontWeight.SemiBold, style = MaterialTheme.typography.labelLarge) }
             )
         }
     ) { paddingValues ->
@@ -110,7 +121,7 @@ fun WaiterMainScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(paddingValues)
-                .padding(horizontal = 16.dp)
+                .padding(horizontal = 12.dp)
         ) {
             Spacer(modifier = Modifier.height(12.dp))
 
@@ -122,7 +133,7 @@ fun WaiterMainScreen(
             ) {
                 Text(
                     text = uiState.currentUserName?.let { "👨\u200d🍽️ $it" } ?: "👨\u200d🍽️ Mesero",
-                    style = MaterialTheme.typography.titleLarge,
+                    style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.primary
                 )
@@ -189,46 +200,63 @@ fun WaiterMainScreen(
             Spacer(modifier = Modifier.height(16.dp))
 
             // ── Chips de navegación ────────────────────────────────────
-            Row(
+            androidx.compose.foundation.lazy.LazyRow(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(12.dp)
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
             ) {
-                FilterChip(
-                    selected = selectedTab == WaiterTab.MIS_ORDENES,
-                    onClick = { selectedTab = WaiterTab.MIS_ORDENES },
-                    label = {
-                        Text(
-                            "📋 Mis Órdenes (${waiterOrders.size})",
-                            style = MaterialTheme.typography.bodyMedium,
-                            fontWeight = if (selectedTab == WaiterTab.MIS_ORDENES) FontWeight.Bold else FontWeight.Normal
-                        )
-                    },
-                    modifier = Modifier.height(44.dp)
-                )
-
-                BadgedBox(
-                    badge = {
-                        if (readyCount > 0) {
-                            Badge(containerColor = MaterialTheme.colorScheme.error) {
-                                Text(
-                                    readyCount.toString(),
-                                    color = MaterialTheme.colorScheme.onError
-                                )
-                            }
-                        }
-                    }
-                ) {
+                item {
                     FilterChip(
-                        selected = selectedTab == WaiterTab.LISTAS,
-                        onClick = { selectedTab = WaiterTab.LISTAS },
+                        selected = selectedTab == WaiterTab.MIS_ORDENES,
+                        onClick = { selectedTab = WaiterTab.MIS_ORDENES },
                         label = {
                             Text(
-                                "🔔 Listas para servir",
+                                "Mis Órdenes (${waiterOrders.size})",
                                 style = MaterialTheme.typography.bodyMedium,
-                                fontWeight = if (selectedTab == WaiterTab.LISTAS) FontWeight.Bold else FontWeight.Normal
+                                fontWeight = if (selectedTab == WaiterTab.MIS_ORDENES) FontWeight.Bold else FontWeight.Normal,
                             )
                         },
-                        modifier = Modifier.height(44.dp)
+                        modifier = Modifier.height(36.dp),
+                    )
+                }
+                item {
+                    BadgedBox(
+                        badge = {
+                            if (readyCount > 0) {
+                                Badge(containerColor = MaterialTheme.colorScheme.error) {
+                                    Text(
+                                        readyCount.toString(),
+                                        color = MaterialTheme.colorScheme.onError,
+                                    )
+                                }
+                            }
+                        },
+                    ) {
+                        FilterChip(
+                            selected = selectedTab == WaiterTab.LISTAS,
+                            onClick = { selectedTab = WaiterTab.LISTAS },
+                            label = {
+                                Text(
+                                    "Listas (${readyCount})",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    fontWeight = if (selectedTab == WaiterTab.LISTAS) FontWeight.Bold else FontWeight.Normal,
+                                )
+                            },
+                            modifier = Modifier.height(36.dp),
+                        )
+                    }
+                }
+                item {
+                    FilterChip(
+                        selected = selectedTab == WaiterTab.ENTREGADAS,
+                        onClick = { selectedTab = WaiterTab.ENTREGADAS },
+                        label = {
+                            Text(
+                                "Entregadas (${deliveredCount})",
+                                style = MaterialTheme.typography.bodyMedium,
+                                fontWeight = if (selectedTab == WaiterTab.ENTREGADAS) FontWeight.Bold else FontWeight.Normal,
+                            )
+                        },
+                        modifier = Modifier.height(36.dp),
                     )
                 }
             }
@@ -339,6 +367,49 @@ fun WaiterMainScreen(
                             }
                         }
                     }
+
+                    WaiterTab.ENTREGADAS -> {
+                        if (deliveredOrders.isEmpty()) {
+                            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                                Column(
+                                    horizontalAlignment = Alignment.CenterHorizontally,
+                                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                                ) {
+                                    Icon(
+                                        Icons.Default.DoneAll,
+                                        contentDescription = null,
+                                        modifier = Modifier.size(56.dp),
+                                        tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.25f),
+                                    )
+                                    Text(
+                                        "Aún no hay órdenes entregadas.",
+                                        style = MaterialTheme.typography.bodyLarge,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    )
+                                    Text(
+                                        "Aquí verás las que marques como entregadas para validar con la mesa.",
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                                    )
+                                }
+                            }
+                        } else {
+                            LazyColumn(
+                                modifier = Modifier.fillMaxSize(),
+                                verticalArrangement = Arrangement.spacedBy(12.dp),
+                                contentPadding = PaddingValues(bottom = 80.dp),
+                            ) {
+                                items(deliveredOrders) { order ->
+                                    WaiterOrderCard(
+                                        order = order,
+                                        onDeliverOrder = {},
+                                        showDeliverAction = false,
+                                        onLongClickEdit = { viewModel.openEditOrder(order) },
+                                    )
+                                }
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -351,9 +422,15 @@ fun WaiterOrderCard(
     order: Order,
     onDeliverOrder: (Long) -> Unit,
     onLongClickEdit: () -> Unit = {},
+    showDeliverAction: Boolean = true,
 ) {
     val isReady = order.status == OrderStatus.READY
-    val cardColor = if (isReady) MaterialTheme.colorScheme.primary.copy(alpha = 0.05f) else MaterialTheme.colorScheme.surface
+    val isDelivered = order.status == OrderStatus.DELIVERED
+    val cardColor = when {
+        isReady -> MaterialTheme.colorScheme.primary.copy(alpha = 0.05f)
+        isDelivered -> MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.45f)
+        else -> MaterialTheme.colorScheme.surface
+    }
     val borderColor = if (isReady) MaterialTheme.colorScheme.primary else Color.Transparent
     
     Card(
@@ -364,13 +441,13 @@ fun WaiterOrderCard(
                 onLongClick = onLongClickEdit
             )
             .background(borderColor.copy(alpha = if (isReady) 0.15f else 0f), RoundedCornerShape(12.dp)),
-        elevation = CardDefaults.cardElevation(defaultElevation = if (isReady) 6.dp else 2.dp),
+        elevation = CardDefaults.cardElevation(defaultElevation = if (isReady) 3.dp else 1.dp),
         colors = CardDefaults.cardColors(
             containerColor = cardColor
         )
     ) {
         Column(
-            modifier = Modifier.padding(16.dp)
+            modifier = Modifier.padding(10.dp)
         ) {
             // Header with priority indicator
             Row(
@@ -381,29 +458,29 @@ fun WaiterOrderCard(
                 Column {
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
                     ) {
                         if (isReady) {
                             Icon(
                                 Icons.Default.Notifications,
                                 contentDescription = "Lista",
                                 tint = MaterialTheme.colorScheme.primary,
-                                modifier = Modifier.size(20.dp)
+                                modifier = Modifier.size(16.dp)
                             )
                         }
                         Text(
                             text = "Orden #${order.orderNumber}",
-                            style = MaterialTheme.typography.titleLarge,
+                            style = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.Bold,
                             color = if (isReady) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
                         )
                     }
                     
-                    Spacer(modifier = Modifier.height(4.dp))
+                    Spacer(modifier = Modifier.height(2.dp))
                     
                     Text(
                         text = "Mesa: ${order.tableName ?: order.tableId}",
-                        style = MaterialTheme.typography.bodyLarge,
+                        style = MaterialTheme.typography.bodyMedium,
                         fontWeight = FontWeight.Medium,
                         color = MaterialTheme.colorScheme.onSurface
                     )
@@ -469,7 +546,7 @@ fun WaiterOrderCard(
                 }
             }
 
-            if (isReady) {
+            if (showDeliverAction && isReady) {
                 Spacer(modifier = Modifier.height(16.dp))
                 
                 // Deliver button
@@ -489,21 +566,26 @@ fun WaiterOrderCard(
                 }
             }
 
-            Spacer(modifier = Modifier.height(8.dp))
-            OutlinedButton(
-                onClick = onLongClickEdit,
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Icon(Icons.Default.Edit, contentDescription = null, modifier = Modifier.size(18.dp))
-                Spacer(modifier = Modifier.width(8.dp))
-                Text("Editar orden")
+            if (!isDelivered) {
+                Spacer(modifier = Modifier.height(8.dp))
+                OutlinedButton(
+                    onClick = onLongClickEdit,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Icon(Icons.Default.Edit, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("Editar orden")
+                }
             }
 
             // Timestamp
             Spacer(modifier = Modifier.height(8.dp))
             Text(
-                text = if (isReady) "Lista desde: ${formatDateTime(order.updatedAt.toString())}" 
-                      else "Entregada: ${formatDateTime(order.updatedAt.toString())}",
+                text = when {
+                    isReady -> "Lista desde: ${formatDateTime(order.updatedAt.toString())}"
+                    isDelivered -> "Entregada: ${formatDateTime(order.updatedAt.toString())}"
+                    else -> "Actualizada: ${formatDateTime(order.updatedAt.toString())}"
+                },
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )

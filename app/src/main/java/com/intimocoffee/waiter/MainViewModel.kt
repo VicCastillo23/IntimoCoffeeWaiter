@@ -12,8 +12,13 @@ class MainViewModel @Inject constructor(
     private val authRepository: AuthRepository
 ) : ViewModel() {
     
+    /**
+     * True if a local session exists and POS revalidation succeeds.
+     * Clears DataStore when revalidation fails.
+     */
     suspend fun isUserLoggedIn(): Boolean {
-        return authRepository.isLoggedIn()
+        if (!authRepository.isLoggedIn()) return false
+        return authRepository.revalidateSession()
     }
 
     fun logout() {

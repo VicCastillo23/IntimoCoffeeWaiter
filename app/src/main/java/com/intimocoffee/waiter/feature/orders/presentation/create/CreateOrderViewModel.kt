@@ -447,13 +447,13 @@ class CreateOrderViewModel @Inject constructor(
         )
     }
 
-    fun updateCartItemQuantity(productKey: String, quantity: Int) {
+    fun updateCartItemQuantity(rowKey: String, quantity: Int) {
         val currentState = _uiState.value
         val updatedCart = if (quantity <= 0) {
-            currentState.cartItems.filter { it.product.cartLineKey() != productKey }
+            currentState.cartItems.filter { it.rowKey() != rowKey }
         } else {
             currentState.cartItems.map { cartItem ->
-                if (cartItem.product.cartLineKey() == productKey) {
+                if (cartItem.rowKey() == rowKey) {
                     cartItem.withQuantity(quantity)
                 } else {
                     cartItem
@@ -464,10 +464,10 @@ class CreateOrderViewModel @Inject constructor(
         _uiState.value = currentState.copy(cartItems = updatedCart)
     }
 
-    fun updateCartItemNotes(productKey: String, notes: String) {
+    fun updateCartItemNotes(rowKey: String, notes: String) {
         val currentState = _uiState.value
         val updatedCart = currentState.cartItems.map { cartItem ->
-            if (cartItem.product.cartLineKey() == productKey) {
+            if (cartItem.rowKey() == rowKey) {
                 cartItem.withNotes(notes.takeIf { it.isNotBlank() })
             } else {
                 cartItem
@@ -477,9 +477,9 @@ class CreateOrderViewModel @Inject constructor(
         _uiState.value = currentState.copy(cartItems = updatedCart)
     }
 
-    fun removeCartItem(productKey: String) {
+    fun removeCartItem(rowKey: String) {
         val currentState = _uiState.value
-        val updatedCart = currentState.cartItems.filter { it.product.cartLineKey() != productKey }
+        val updatedCart = currentState.cartItems.filter { it.rowKey() != rowKey }
         _uiState.value = currentState.copy(cartItems = updatedCart)
     }
 
@@ -582,11 +582,18 @@ class CreateOrderViewModel @Inject constructor(
                 } catch (e: Exception) {
                     null
                 }
-                val createdByUserId = currentUser?.id ?: 1L
+                val createdByUserId = currentUser?.id
+                if (createdByUserId == null) {
+                    _uiState.value = currentState.copy(
+                        isLoading = false,
+                        error = "Sesión no válida. Vuelve a iniciar sesión para crear órdenes."
+                    )
+                    return@launch
+                }
 
                 Log.d(
                     "CreateOrderViewModel",
-                    "Creating order on remote server as userId=$createdByUserId (user=${currentUser?.username})"
+                    "Creating order on remote server as userId=$createdByUserId (user=${currentUser.username})"
                 )
                 
                 // Create order directly on the main server using API
@@ -610,13 +617,17 @@ class CreateOrderViewModel @Inject constructor(
                 if (result.isSuccess && orderId > 0) {
                     Log.d("CreateOrderViewModel", "Order created successfully on remote server with ID: $orderId")
 
-                    // Save fidelity points if phone was provided
+                    // Award fidelity only after successful AWS link for a known customer
                     val phone = currentState.customerPhone
                     if (phone.isNotBlank()) {
                         try {
                             val updatedCustomer = fidelityRepository.addPoints(phone, currentState.calculatedTotal, orderId)
-                            Log.d("CreateOrderViewModel", "Fidelity points saved for $phone (orderId=$orderId, pts=${updatedCustomer.totalPoints})")
-                            _uiState.value = _uiState.value.copy(fidelityCustomer = updatedCustomer)
+                            if (updatedCustomer != null) {
+                                Log.d("CreateOrderViewModel", "Fidelity points saved for $phone (orderId=$orderId, pts=${updatedCustomer.totalPoints})")
+                                _uiState.value = _uiState.value.copy(fidelityCustomer = updatedCustomer)
+                            } else {
+                                Log.d("CreateOrderViewModel", "Fidelity points not awarded (unknown phone or AWS link failed)")
+                            }
                         } catch (e: Exception) {
                             Log.w("CreateOrderViewModel", "Failed to save fidelity points: ${e.message}")
                         }

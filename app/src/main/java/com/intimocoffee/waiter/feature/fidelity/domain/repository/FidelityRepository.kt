@@ -11,12 +11,10 @@ interface FidelityRepository {
     suspend fun getByCustomerId(id: Long): FidelityCustomer?
 
     /**
-     * Adds points to a customer's account based on the order total.
-     * Rule: 1 point per $1,000 COP.
-     * Creates the customer if they don't exist yet.
-     * Optionally pass [orderId] to link the order on the remote server.
+     * Adds points only after a successful AWS link-order when the customer exists remotely.
+     * Returns null when the phone is unknown or the link fails (does not inflate local points).
      */
-    suspend fun addPoints(phone: String, orderTotal: BigDecimal, orderId: Long = 0L): FidelityCustomer
+    suspend fun addPoints(phone: String, orderTotal: BigDecimal, orderId: Long = 0L): FidelityCustomer?
 
     fun getAllCustomers(): Flow<List<FidelityCustomer>>
 

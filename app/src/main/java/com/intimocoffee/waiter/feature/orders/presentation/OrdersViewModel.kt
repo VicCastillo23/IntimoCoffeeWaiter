@@ -351,9 +351,36 @@ class OrdersViewModel @Inject constructor(
                 dismissEditOrder()
                 refreshOrders()
             } catch (e: Exception) {
-                _uiState.update {
-                    it.copy(isLoading = false, error = e.message ?: "Error al guardar la orden")
+                Log.e("OrdersViewModel", "applyOrderEditsRemote failed (best-effort partial)", e)
+                // No atomic API: reload order from server so UI matches what actually applied.
+                try {
+                    val refreshed = getOrdersUseCase().first()
+                        .filter { it.status != OrderStatus.ARCHIVED }
+                    _orders.value = refreshed
+                    val refreshedOrder = refreshed.find { it.id == order.id }
+                    _uiState.update { current ->
+                        current.copy(
+                            orders = refreshed,
+                            filteredOrders = filterOrders(
+                                refreshed,
+                                current.selectedStatus,
+                                current.searchQuery
+                            ),
+                            orderToEdit = refreshedOrder,
+                            isLoading = false,
+                            error = "Cambios parciales; revisa la orden"
+                        )
+                    }
+                } catch (reloadError: Exception) {
+                    Log.e("OrdersViewModel", "Failed to reload order after partial edits", reloadError)
+                    _uiState.update {
+                        it.copy(
+                            isLoading = false,
+                            error = "Cambios parciales; revisa la orden"
+                        )
+                    }
                 }
+                return@launch
             }
             _uiState.update { it.copy(isLoading = false) }
         }

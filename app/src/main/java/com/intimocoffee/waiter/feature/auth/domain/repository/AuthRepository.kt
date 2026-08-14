@@ -8,6 +8,11 @@ interface AuthRepository {
     suspend fun getCurrentUser(): User?
     suspend fun logout()
     suspend fun isLoggedIn(): Boolean
+    /**
+     * Revalidates the DataStore session against POS `/api/login/me`.
+     * On failure clears the local session and returns false.
+     */
+    suspend fun revalidateSession(): Boolean
     suspend fun saveCurrentUser(user: User)
     suspend fun createDefaultUsers()
 }

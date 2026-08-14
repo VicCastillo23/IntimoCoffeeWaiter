@@ -31,6 +31,10 @@ interface IntimoCoffeeApiService {
     @POST("api/login")
     suspend fun login(@Body request: LoginRequest): Response<LoginResponse>
 
+    /** Revalida sesión local contra el POS (usuario activo). */
+    @GET("api/login/me")
+    suspend fun validateSession(@Query("userId") userId: Long): Response<LoginResponse>
+
     // API-First de creación de órdenes (servidor REST principal)
     @POST("api/orders")
     suspend fun createOrder(@Body request: CreateOrderRequest): Response<CreateOrderResponse>

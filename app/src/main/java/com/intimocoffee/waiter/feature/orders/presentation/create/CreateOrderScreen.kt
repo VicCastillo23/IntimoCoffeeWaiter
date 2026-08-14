@@ -10,6 +10,7 @@ import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
@@ -29,6 +30,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.ExperimentalComposeUiApi
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
@@ -736,7 +738,7 @@ private fun ProductCard(
     }
 }
 
-// ─── Panel "Resumen de Orden" (parte inferior) ────────────────────────────────
+// ─── Panel "Resumen de Orden" (colapsable: menú siempre visible) ─────────────
 @Composable
 private fun CartSummaryPanel(
     cartItems: List<CartItem>,
@@ -751,111 +753,162 @@ private fun CartSummaryPanel(
     val fmt = NumberFormat.getCurrencyInstance(Locale("es", "CO"))
     val hasItems = cartItems.isNotEmpty()
     val totalQty = cartItems.sumOf { it.quantity }
+    // Por defecto colapsado para dejar el menú a la mano del mesero.
+    var expanded by remember { mutableStateOf(false) }
+
+    LaunchedEffect(hasItems) {
+        if (!hasItems) expanded = false
+    }
 
     Surface(
         modifier = Modifier.fillMaxWidth(),
         color = MaterialTheme.colorScheme.surface,
         shadowElevation = 10.dp,
-        tonalElevation = 2.dp
+        tonalElevation = 2.dp,
+        shape = RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp),
     ) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .animateContentSize(animationSpec = tween(250))
+                .animateContentSize(animationSpec = tween(220))
         ) {
-            // Header
-            Row(
+            // Cabecera: toque o desliza para abrir/cerrar el detalle
+            Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 14.dp, vertical = 10.dp),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
+                    .pointerInput(hasItems, expanded) {
+                        if (!hasItems) return@pointerInput
+                        detectVerticalDragGestures { _, dragAmount ->
+                            when {
+                                dragAmount < -12f -> expanded = true
+                                dragAmount > 12f -> expanded = false
+                            }
+                        }
+                    }
+                    .clickable(enabled = hasItems) { expanded = !expanded }
+                    .padding(horizontal = 14.dp, vertical = 8.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
             ) {
+                Box(
+                    modifier = Modifier
+                        .width(36.dp)
+                        .height(4.dp)
+                        .clip(RoundedCornerShape(2.dp))
+                        .background(MaterialTheme.colorScheme.onSurface.copy(alpha = 0.22f))
+                )
+                Spacer(modifier = Modifier.height(8.dp))
                 Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    Icon(
-                        Icons.Default.Receipt, null,
-                        Modifier.size(18.dp),
-                        tint = if (hasItems) MaterialTheme.colorScheme.primary
-                               else MaterialTheme.colorScheme.onSurface.copy(0.35f)
-                    )
-                    Text(
-                        "Resumen de Orden",
-                        style = MaterialTheme.typography.titleSmall,
-                        fontWeight = FontWeight.Bold,
-                        color = if (hasItems) MaterialTheme.colorScheme.onSurface
-                                else MaterialTheme.colorScheme.onSurface.copy(0.45f)
-                    )
-                    if (hasItems) {
-                        Surface(
-                            shape = RoundedCornerShape(10.dp),
-                            color = MaterialTheme.colorScheme.primary
-                        ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        Icon(
+                            Icons.Default.Receipt,
+                            contentDescription = null,
+                            modifier = Modifier.size(18.dp),
+                            tint = if (hasItems) MaterialTheme.colorScheme.primary
+                            else MaterialTheme.colorScheme.onSurface.copy(0.35f),
+                        )
+                        Text(
+                            if (hasItems) "Orden" else "Orden vacía",
+                            style = MaterialTheme.typography.titleSmall,
+                            fontWeight = FontWeight.Bold,
+                            color = if (hasItems) MaterialTheme.colorScheme.onSurface
+                            else MaterialTheme.colorScheme.onSurface.copy(0.45f),
+                        )
+                        if (hasItems) {
+                            Surface(
+                                shape = RoundedCornerShape(10.dp),
+                                color = MaterialTheme.colorScheme.primary,
+                            ) {
+                                Text(
+                                    "$totalQty",
+                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp),
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onPrimary,
+                                    fontWeight = FontWeight.Bold,
+                                )
+                            }
+                        }
+                    }
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    ) {
+                        if (hasItems) {
                             Text(
-                                "$totalQty",
-                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp),
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onPrimary,
-                                fontWeight = FontWeight.Bold
+                                fmt.format(total),
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.ExtraBold,
+                                color = MaterialTheme.colorScheme.primary,
+                            )
+                            Icon(
+                                imageVector = if (expanded) Icons.Default.KeyboardArrowDown
+                                else Icons.Default.KeyboardArrowUp,
+                                contentDescription = if (expanded) "Ocultar detalle" else "Ver detalle",
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
                         }
                     }
                 }
-                if (hasItems) {
-                    Column(horizontalAlignment = Alignment.End) {
+                if (hasItems && !expanded) {
+                    Text(
+                        "Desliza o toca para ver / editar ítems",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+
+            AnimatedVisibility(
+                visible = hasItems && expanded,
+                enter = expandVertically(animationSpec = tween(220)) + fadeIn(tween(180)),
+                exit = shrinkVertically(animationSpec = tween(180)) + fadeOut(tween(140)),
+            ) {
+                Column(modifier = Modifier.fillMaxWidth()) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 14.dp),
+                    ) {
                         Text(
-                            fmt.format(total),
-                            style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.ExtraBold,
-                            color = MaterialTheme.colorScheme.primary
+                            "Subtotal (sin IVA): ${fmt.format(subtotalNet)}",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                        Text(
+                            "IVA incluido en precio: ${fmt.format(taxIncluded)}",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                     }
-                }
-            }
-
-            if (hasItems) {
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 14.dp, vertical = 0.dp)
-                ) {
-                    Text(
-                        "Subtotal (sin IVA): ${fmt.format(subtotalNet)}",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    Divider(
+                        modifier = Modifier.padding(top = 6.dp),
+                        color = MaterialTheme.colorScheme.outlineVariant.copy(0.4f),
                     )
-                    Text(
-                        "IVA incluido en precio: ${fmt.format(taxIncluded)}",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-            }
-
-            // Lista de items (solo cuando hay productos)
-            if (hasItems) {
-                Divider(color = MaterialTheme.colorScheme.outlineVariant.copy(0.4f))
-                LazyColumn(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .heightIn(max = 180.dp),
-                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp),
-                    verticalArrangement = Arrangement.spacedBy(2.dp)
-                ) {
-                    items(cartItems) { item ->
-                        CartItemRow(
-                            item = item,
-                            onUpdateQuantity = onUpdateQuantity,
-                            onRemove = onRemoveItem
-                        )
+                    LazyColumn(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .heightIn(max = 220.dp),
+                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp),
+                        verticalArrangement = Arrangement.spacedBy(2.dp),
+                    ) {
+                        items(cartItems) { item ->
+                            CartItemRow(
+                                item = item,
+                                onUpdateQuantity = onUpdateQuantity,
+                                onRemove = onRemoveItem,
+                            )
+                        }
                     }
+                    Divider(color = MaterialTheme.colorScheme.outlineVariant.copy(0.4f))
                 }
-                Divider(color = MaterialTheme.colorScheme.outlineVariant.copy(0.4f))
             }
 
-            // Botón Generar Orden
             Button(
                 onClick = onCreateOrder,
                 enabled = isCreateEnabled,
@@ -865,15 +918,15 @@ private fun CartSummaryPanel(
                     .height(52.dp),
                 shape = RoundedCornerShape(12.dp),
                 colors = ButtonDefaults.buttonColors(
-                    containerColor = MaterialTheme.colorScheme.primary
-                )
+                    containerColor = MaterialTheme.colorScheme.primary,
+                ),
             ) {
-                Icon(Icons.Default.CheckCircle, null, Modifier.size(20.dp))
-                Spacer(Modifier.width(8.dp))
+                Icon(Icons.Default.CheckCircle, contentDescription = null, modifier = Modifier.size(20.dp))
+                Spacer(modifier = Modifier.width(8.dp))
                 Text(
                     "Generar Orden",
                     style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold
+                    fontWeight = FontWeight.Bold,
                 )
             }
         }
@@ -927,8 +980,8 @@ private fun CartItemRow(
         Row(verticalAlignment = Alignment.CenterVertically) {
             IconButton(
                 onClick = {
-                    if (item.quantity == 1) onRemove(item.product.cartLineKey())
-                    else onUpdateQuantity(item.product.cartLineKey(), item.quantity - 1)
+                    if (item.quantity == 1) onRemove(item.rowKey())
+                    else onUpdateQuantity(item.rowKey(), item.quantity - 1)
                 },
                 modifier = Modifier.size(28.dp)
             ) {
@@ -948,7 +1001,7 @@ private fun CartItemRow(
                 textAlign = TextAlign.Center
             )
             IconButton(
-                onClick = { onUpdateQuantity(item.product.cartLineKey(), item.quantity + 1) },
+                onClick = { onUpdateQuantity(item.rowKey(), item.quantity + 1) },
                 modifier = Modifier.size(28.dp)
             ) {
                 Icon(Icons.Default.Add, null, Modifier.size(14.dp), tint = color)

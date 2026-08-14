@@ -31,14 +31,19 @@ class DynamicRetrofitProvider @Inject constructor(
             || Build.MANUFACTURER.contains("Genymotion")
     }
     
-    @Volatile private var currentBaseUrl: String = EMULATOR_LOOPBACK_BASE_URL
-    @Volatile private var apiService: IntimoCoffeeApiService =
-        buildService(EMULATOR_LOOPBACK_BASE_URL)
+    @Volatile private var currentBaseUrl: String =
+        if (isLikelyEmulator()) EMULATOR_LOOPBACK_BASE_URL else ""
+    @Volatile private var apiService: IntimoCoffeeApiService? =
+        if (isLikelyEmulator()) buildService(EMULATOR_LOOPBACK_BASE_URL) else null
     
     /**
-     * Returns the cached API service (uses DEFAULT_BASE_URL until discoverAndRefreshService() runs).
+     * Returns the cached API service. On physical devices this is null until
+     * [discoverAndRefreshService] finds a server (never falls back to 10.0.2.2).
      */
-    fun getApiService(): IntimoCoffeeApiService = apiService
+    fun getApiService(): IntimoCoffeeApiService =
+        apiService ?: throw IllegalStateException(
+            "Servidor POS no disponible. Configura INTIMO_MAIN_SERVER_URL o espera el descubrimiento."
+        )
     
     /**
      * Discovers the server and updates the cached service. Must be called before login.
@@ -61,14 +66,18 @@ class DynamicRetrofitProvider @Inject constructor(
                     "❌ Discovery failed on dispositivo físico. Añade en gradle.properties la IP de la tablet: " +
                         "INTIMO_MAIN_SERVER_URL=http://192.168.x.x:8080/ y Sync + rebuild."
                 )
-                EMULATOR_LOOPBACK_BASE_URL
+                // Never set 10.0.2.2 on a physical device — leave unset and surface error.
+                throw IllegalStateException(
+                    "No se encontró la tablet POS. En gradle.properties del proyecto mesero: " +
+                        "INTIMO_MAIN_SERVER_URL=http://IP_DE_LA_TABLET:8080/ y Sync + recompilar."
+                )
             }
         }
         synchronized(this) {
             currentBaseUrl = baseUrl
             apiService = buildService(baseUrl)
         }
-        return apiService
+        return apiService!!
     }
     
     /**
@@ -82,11 +91,10 @@ class DynamicRetrofitProvider @Inject constructor(
     /**
      * Get current server URL (for debugging / header display).
      */
-    fun getCurrentServerUrl(): String = currentBaseUrl
+    fun getCurrentServerUrl(): String = currentBaseUrl.ifBlank { "(sin servidor)" }
 
     /**
-     * Tras fallar el descubrimiento, en teléfono/tablet real se reutiliza 10.0.2.2 (solo válido en emulador);
-     * el login contra usuarios del POS nunca funcionará hasta configurar [MAIN_SERVER_BASE_URL].
+     * True if somehow still pointing at emulator loopback on a real device (should not happen after WTR-008).
      */
     fun isUsingEmulatorLoopbackOnPhysicalDevice(): Boolean {
         return !isLikelyEmulator() && currentBaseUrl.contains("10.0.2.2")

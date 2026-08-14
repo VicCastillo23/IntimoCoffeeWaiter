@@ -79,7 +79,7 @@ class RemoteOrderService @Inject constructor(
         } catch (e: Exception) {
             Log.e("RemoteOrderService", "Exception creating order on server: ${e.message}", e)
             // If connection fails, try to rediscover server
-            if (e is java.net.ConnectException || e is java.net.UnknownHostException) {
+            if (isConnectionException(e)) {
                 Log.i("RemoteOrderService", "Connection failed, triggering server rediscovery...")
                 try {
                     retrofitProvider.rediscoverServer()
@@ -156,7 +156,7 @@ class RemoteOrderService @Inject constructor(
         } catch (e: Exception) {
             Log.e("RemoteOrderService", "Exception updating order status on server: ${e.message}", e)
             // If connection fails, try to rediscover server
-            if (e is java.net.ConnectException || e is java.net.UnknownHostException) {
+            if (isConnectionException(e)) {
                 Log.i("RemoteOrderService", "Connection failed, triggering server rediscovery...")
                 try {
                     retrofitProvider.rediscoverServer()
@@ -216,7 +216,7 @@ class RemoteOrderService @Inject constructor(
         } catch (e: Exception) {
             Log.e("RemoteOrderService", "Exception updating order item status on server: ${e.message}", e)
             // If connection fails, try to rediscover server
-            if (e is java.net.ConnectException || e is java.net.UnknownHostException) {
+            if (isConnectionException(e)) {
                 Log.i("RemoteOrderService", "Connection failed, triggering server rediscovery...")
                 try {
                     retrofitProvider.rediscoverServer()
@@ -261,7 +261,7 @@ class RemoteOrderService @Inject constructor(
         } catch (e: Exception) {
             Log.e("RemoteOrderService", "Exception fetching active orders from server: ${e.message}", e)
             // If connection fails, try to rediscover server
-            if (e is java.net.ConnectException || e is java.net.UnknownHostException) {
+            if (isConnectionException(e)) {
                 Log.i("RemoteOrderService", "Connection failed, triggering server rediscovery...")
                 try {
                     retrofitProvider.rediscoverServer()
@@ -301,7 +301,7 @@ class RemoteOrderService @Inject constructor(
         } catch (e: Exception) {
             Log.e("RemoteOrderService", "Exception fetching products from server: ${e.message}", e)
             // If connection fails, try to rediscover server
-            if (e is java.net.ConnectException || e is java.net.UnknownHostException) {
+            if (isConnectionException(e)) {
                 Log.i("RemoteOrderService", "Connection failed, triggering server rediscovery...")
                 try {
                     retrofitProvider.rediscoverServer()
@@ -337,7 +337,7 @@ class RemoteOrderService @Inject constructor(
             }
         } catch (e: Exception) {
             Log.e("RemoteOrderService", "Exception fetching categories from server: ${e.message}", e)
-            if (e is java.net.ConnectException || e is java.net.UnknownHostException) {
+            if (isConnectionException(e)) {
                 try {
                     retrofitProvider.rediscoverServer()
                     val retryResponse = retrofitProvider.getApiService().getAllCategories()
@@ -373,7 +373,7 @@ class RemoteOrderService @Inject constructor(
         } catch (e: Exception) {
             Log.e("RemoteOrderService", "Exception fetching tables from server: ${e.message}", e)
             // If connection fails, try to rediscover server
-            if (e is java.net.ConnectException || e is java.net.UnknownHostException) {
+            if (isConnectionException(e)) {
                 Log.i("RemoteOrderService", "Connection failed, triggering server rediscovery...")
                 try {
                     retrofitProvider.rediscoverServer()

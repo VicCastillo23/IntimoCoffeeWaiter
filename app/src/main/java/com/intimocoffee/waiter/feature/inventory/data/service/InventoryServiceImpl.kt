@@ -200,7 +200,21 @@ class InventoryServiceImpl @Inject constructor(
                 val mapKey = productKey.toLongOrNull() ?: kotlin.math.abs(productKey.hashCode().toLong())
 
                 if (product != null) {
-                    val availableStock = product.stockQuantity ?: 0
+                    val stockQty = product.stockQuantity
+                    // Null stock = inventory not tracked; treat as available (skip validation).
+                    if (stockQty == null) {
+                        itemAvailability[mapKey] = ItemStockStatus(
+                            productId = product.id,
+                            productName = productName,
+                            requestedQuantity = requiredQuantity,
+                            availableQuantity = Int.MAX_VALUE,
+                            isAvailable = true,
+                            isLowStock = false,
+                            willBeOutOfStock = false
+                        )
+                        return@forEach
+                    }
+                    val availableStock = stockQty
                     val minStockLevel = product.minStockLevel ?: 5
                     val isAvailable = availableStock >= requiredQuantity
                     val isLowStock = availableStock <= minStockLevel

@@ -57,6 +57,7 @@ private data class EditableLine(
     val stableKey: Long,
     val itemId: Long,
     val productId: Long,
+    val productDatabaseId: String? = null,
     val name: String,
     val unitPrice: BigDecimal,
     val quantity: Int,
@@ -102,7 +103,13 @@ fun OrderEditDialog(
     }
 
     fun addProductToEditableLines(product: Product) {
-        val idx = lines.indexOfFirst { it.itemId == 0L && it.productId == product.id }
+        val raw = product.rawId.trim()
+        val parsed = raw.toLongOrNull()
+        val productDatabaseId = if (raw.isNotEmpty() && parsed == null) raw else null
+        val productId = product.id.takeIf { it != 0L } ?: parsed ?: 0L
+        val idx = lines.indexOfFirst {
+            it.itemId == 0L && it.productId == productId && it.productDatabaseId == productDatabaseId
+        }
         if (idx >= 0) {
             val current = lines[idx]
             lines[idx] = current.copy(quantity = current.quantity + 1)
@@ -113,7 +120,8 @@ fun OrderEditDialog(
             EditableLine(
                 stableKey = newKey,
                 itemId = 0L,
-                productId = product.id,
+                productId = productId,
+                productDatabaseId = productDatabaseId,
                 name = product.name,
                 unitPrice = product.price,
                 quantity = 1,
@@ -124,7 +132,13 @@ fun OrderEditDialog(
     }
 
     fun adjustNewProductQty(product: Product, delta: Int) {
-        val idx = lines.indexOfFirst { it.itemId == 0L && it.productId == product.id }
+        val raw = product.rawId.trim()
+        val parsed = raw.toLongOrNull()
+        val productDatabaseId = if (raw.isNotEmpty() && parsed == null) raw else null
+        val productId = product.id.takeIf { it != 0L } ?: parsed ?: 0L
+        val idx = lines.indexOfFirst {
+            it.itemId == 0L && it.productId == productId && it.productDatabaseId == productDatabaseId
+        }
         if (idx < 0) {
             if (delta > 0) addProductToEditableLines(product)
             return
@@ -241,7 +255,13 @@ fun OrderEditDialog(
                 ) {
                     items(filteredProducts, key = { it.id }) { p ->
                         val pendingQty = lines
-                            .filter { it.itemId == 0L && it.productId == p.id }
+                            .filter {
+                                val raw = p.rawId.trim()
+                                val parsed = raw.toLongOrNull()
+                                val dbId = if (raw.isNotEmpty() && parsed == null) raw else null
+                                val pid = p.id.takeIf { it != 0L } ?: parsed ?: 0L
+                                it.itemId == 0L && it.productId == pid && it.productDatabaseId == dbId
+                            }
                             .sumOf { it.quantity }
                         Row(
                             modifier = Modifier.fillMaxWidth(),
@@ -330,6 +350,7 @@ fun OrderEditDialog(
                                         id = 0L,
                                         orderId = order.id,
                                         productId = line.productId,
+                                        productDatabaseId = line.productDatabaseId,
                                         productName = line.name,
                                         productPrice = line.unitPrice,
                                         quantity = line.quantity,

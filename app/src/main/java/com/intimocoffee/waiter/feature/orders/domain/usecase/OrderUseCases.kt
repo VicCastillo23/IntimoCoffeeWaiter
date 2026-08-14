@@ -117,19 +117,26 @@ class UpdateOrderStatusUseCase @Inject constructor(
 }
 
 class CancelOrderUseCase @Inject constructor(
-    private val orderRepository: OrderRepository
+    private val orderRepository: OrderRepository,
+    private val remoteOrderService: RemoteOrderService,
 ) {
     suspend operator fun invoke(orderId: Long): Result<Boolean> {
         return try {
-            val order = orderRepository.getOrderById(orderId)
-                ?: return Result.failure(Exception("Orden no encontrada"))
-
-            if (order.status == OrderStatus.DELIVERED || order.status == OrderStatus.CANCELLED) {
-                return Result.failure(Exception("No se puede cancelar una orden ${order.status.displayName}"))
+            // Fuente de verdad = POS (igual que UpdateOrderStatusUseCase).
+            val remoteResult = remoteOrderService.updateOrderStatusOnServer(
+                orderId,
+                OrderStatus.CANCELLED,
+            )
+            if (remoteResult.isFailure || remoteResult.getOrNull() != true) {
+                val error = remoteResult.exceptionOrNull()
+                return Result.failure(error ?: Exception("Error al cancelar la orden en el POS"))
             }
-
-            val success = orderRepository.updateOrderStatus(orderId, OrderStatus.CANCELLED)
-            Result.success(success)
+            // Best-effort local (Room del mesero suele estar vacío en modo online).
+            try {
+                orderRepository.updateOrderStatus(orderId, OrderStatus.CANCELLED)
+            } catch (_: Exception) {
+            }
+            Result.success(true)
         } catch (e: Exception) {
             Result.failure(e)
         }

@@ -208,22 +208,16 @@ class OrderRepositoryImpl @Inject constructor(
                     val domainOrders = apiOrders.toOrderDomainModels()
                     emit(domainOrders)
                 } else {
-                    Log.e(
-                        "OrderRepository",
-                        "getAllOrders: Failed to fetch orders from server (no local fallback)",
-                        result.exceptionOrNull()
-                    )
-                    emit(emptyList())
+                    val err = result.exceptionOrNull()
+                        ?: Exception("No se pudo conectar al POS. Revisa Wi‑Fi / tablet principal.")
+                    Log.e("OrderRepository", "getAllOrders: Failed to fetch orders from server", err)
+                    throw err
                 }
             } catch (e: CancellationException) {
-                throw e // no atrapar cancelaciones de coroutine/flow
+                throw e
             } catch (e: Exception) {
-                Log.e(
-                    "OrderRepository",
-                    "getAllOrders: Exception fetching orders from server (no local fallback)",
-                    e
-                )
-                emit(emptyList())
+                Log.e("OrderRepository", "getAllOrders: Exception fetching orders from server", e)
+                throw e
             }
         }
     }
@@ -281,14 +275,16 @@ class OrderRepositoryImpl @Inject constructor(
                     Log.d("OrderRepository", "Successfully fetched ${orders.size} active orders from server")
                     emit(orders)
                 } else {
-                    Log.w("OrderRepository", "Failed to fetch active orders from server, returning empty list")
-                    emit(emptyList())
+                    val err = result.exceptionOrNull()
+                        ?: Exception("No se pudo conectar al POS. Revisa Wi‑Fi / tablet principal.")
+                    Log.w("OrderRepository", "Failed to fetch active orders from server", err)
+                    throw err
                 }
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                Log.e("OrderRepository", "Exception fetching active orders from server, returning empty list", e)
-                emit(emptyList())
+                Log.e("OrderRepository", "Exception fetching active orders from server", e)
+                throw e
             }
         }
     }

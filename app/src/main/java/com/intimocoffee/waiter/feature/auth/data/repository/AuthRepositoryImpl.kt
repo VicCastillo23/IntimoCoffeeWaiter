@@ -90,6 +90,28 @@ class AuthRepositoryImpl @Inject constructor(
     override suspend fun isLoggedIn(): Boolean {
         return getCurrentUser() != null
     }
+
+    override suspend fun revalidateSession(): Boolean {
+        val local = getCurrentUser() ?: return false
+        return try {
+            val service = retrofitProvider.discoverAndRefreshService()
+            val response = service.validateSession(local.id)
+            val body = response.body()
+            val ok = response.isSuccessful && body?.success == true && body.data != null && body.data.isActive
+            if (!ok) {
+                Log.w("AuthRepository", "Session revalidation failed; clearing DataStore")
+                logout()
+            } else {
+                // Refresh cached profile from POS
+                saveCurrentUser(body!!.data!!.toDomainModel())
+            }
+            ok
+        } catch (e: Exception) {
+            Log.e("AuthRepository", "Session revalidation error; clearing DataStore", e)
+            logout()
+            false
+        }
+    }
     
     override suspend fun saveCurrentUser(user: User) {
         dataStore.edit { preferences ->

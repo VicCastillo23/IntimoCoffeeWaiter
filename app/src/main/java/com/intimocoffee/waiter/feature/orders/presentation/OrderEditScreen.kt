@@ -63,6 +63,7 @@ private data class EditScreenLine(
     val stableKey: Long,
     val itemId: Long,
     val productId: Long,
+    val productDatabaseId: String? = null,
     val name: String,
     val unitPrice: BigDecimal,
     val quantity: Int,
@@ -110,7 +111,13 @@ fun OrderEditScreen(
     }
 
     fun addProduct(product: Product) {
-        val idx = lines.indexOfFirst { it.itemId == 0L && it.productId == product.id }
+        val raw = product.rawId.trim()
+        val parsed = raw.toLongOrNull()
+        val productDatabaseId = if (raw.isNotEmpty() && parsed == null) raw else null
+        val productId = product.id.takeIf { it != 0L } ?: parsed ?: 0L
+        val idx = lines.indexOfFirst {
+            it.itemId == 0L && it.productId == productId && it.productDatabaseId == productDatabaseId
+        }
         if (idx >= 0) {
             val current = lines[idx]
             lines[idx] = current.copy(quantity = current.quantity + 1)
@@ -120,7 +127,8 @@ fun OrderEditScreen(
             EditScreenLine(
                 stableKey = -System.nanoTime(),
                 itemId = 0L,
-                productId = product.id,
+                productId = productId,
+                productDatabaseId = productDatabaseId,
                 name = product.name,
                 unitPrice = product.price,
                 quantity = 1,
@@ -144,8 +152,13 @@ fun OrderEditScreen(
             }
         }.takeIf { it.isNotBlank() }
         val unitPrice = product.price.add(priceExtra)
+        val raw = product.rawId.trim()
+        val parsed = raw.toLongOrNull()
+        val productDatabaseId = if (raw.isNotEmpty() && parsed == null) raw else null
+        val productId = product.id.takeIf { it != 0L } ?: parsed ?: 0L
         val idx = lines.indexOfFirst {
-            it.itemId == 0L && it.productId == product.id && it.notes == notes && it.unitPrice.compareTo(unitPrice) == 0
+            it.itemId == 0L && it.productId == productId && it.productDatabaseId == productDatabaseId &&
+                it.notes == notes && it.unitPrice.compareTo(unitPrice) == 0
         }
         if (idx >= 0) {
             val current = lines[idx]
@@ -155,7 +168,8 @@ fun OrderEditScreen(
                 EditScreenLine(
                     stableKey = -System.nanoTime(),
                     itemId = 0L,
-                    productId = product.id,
+                    productId = productId,
+                    productDatabaseId = productDatabaseId,
                     name = product.name,
                     unitPrice = unitPrice,
                     quantity = 1,
@@ -187,6 +201,7 @@ fun OrderEditScreen(
                     id = 0L,
                     orderId = order.id,
                     productId = line.productId,
+                    productDatabaseId = line.productDatabaseId,
                     productName = line.name,
                     productPrice = line.unitPrice,
                     quantity = line.quantity,

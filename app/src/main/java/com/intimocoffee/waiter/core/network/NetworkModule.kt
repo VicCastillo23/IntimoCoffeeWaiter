@@ -53,7 +53,22 @@ object NetworkModule {
     fun provideIntimoCoffeeApiService(
         dynamicRetrofitProvider: DynamicRetrofitProvider
     ): IntimoCoffeeApiService {
-        return dynamicRetrofitProvider.getApiService()
+        // Prefer live DynamicRetrofitProvider; on physical devices before discovery
+        // getApiService() throws — callers should use DynamicRetrofitProvider after discover.
+        return try {
+            dynamicRetrofitProvider.getApiService()
+        } catch (_: IllegalStateException) {
+            // Hilt may resolve this before NSD finishes; placeholder is unused by RemoteOrderService
+            // which always calls DynamicRetrofitProvider.getApiService().
+            Retrofit.Builder()
+                .baseUrl("http://127.0.0.1:9/")
+                .addConverterFactory(
+                    Json { ignoreUnknownKeys = true }
+                        .asConverterFactory("application/json".toMediaType())
+                )
+                .build()
+                .create(IntimoCoffeeApiService::class.java)
+        }
     }
 
     @Provides

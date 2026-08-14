@@ -326,7 +326,8 @@ class InventoryRepositoryImpl @Inject constructor(
 
     override suspend fun validateStockAvailability(productId: Long, requiredQuantity: Int): Boolean {
         val product = productRepository.getProductById(productId) ?: return false
-        return (product.stockQuantity ?: 0) >= requiredQuantity
+        val stock = product.stockQuantity ?: return true // null = not tracked, treat as available
+        return stock >= requiredQuantity
     }
 
     override suspend fun validateMultipleStockAvailability(requirements: Map<Long, Int>): Map<Long, Boolean> {
@@ -337,7 +338,8 @@ class InventoryRepositoryImpl @Inject constructor(
 
     override suspend fun validateStockAvailabilityByDatabaseId(productKey: String, requiredQuantity: Int): Boolean {
         val product = productRepository.getProductByDatabaseId(productKey) ?: return false
-        return (product.stockQuantity ?: 0) >= requiredQuantity
+        val stock = product.stockQuantity ?: return true // null = not tracked, treat as available
+        return stock >= requiredQuantity
     }
 
     override suspend fun validateMultipleStockAvailabilityByDatabaseId(requirements: Map<String, Int>): Map<String, Boolean> {
