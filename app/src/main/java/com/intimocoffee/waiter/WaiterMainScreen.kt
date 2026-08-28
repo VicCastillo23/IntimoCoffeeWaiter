@@ -1,6 +1,7 @@
 package com.intimocoffee.waiter
 
 import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.*
@@ -15,15 +16,18 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
+import com.intimocoffee.waiter.R
 import com.intimocoffee.waiter.feature.orders.domain.model.Order
 import com.intimocoffee.waiter.feature.orders.domain.model.OrderItem
 import com.intimocoffee.waiter.feature.orders.domain.model.OrderStatus
 import com.intimocoffee.waiter.feature.orders.presentation.OrderEditScreen
 import com.intimocoffee.waiter.core.alert.WorkAlertSound
 import com.intimocoffee.waiter.feature.orders.presentation.OrdersViewModel
+import com.intimocoffee.waiter.ota.OtaUpdateDialog
 import java.math.BigDecimal
 import java.text.NumberFormat
 import java.util.*
@@ -39,6 +43,7 @@ fun WaiterMainScreen(
 ) {
     val uiState by viewModel.uiState.collectAsState()
     val context = LocalContext.current
+    var showOtaDialog by remember { mutableStateOf(false) }
     uiState.orderToEdit?.let { orderToEdit ->
         OrderEditScreen(
             order = orderToEdit,
@@ -131,12 +136,22 @@ fun WaiterMainScreen(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Text(
-                    text = uiState.currentUserName?.let { "👨\u200d🍽️ $it" } ?: "👨\u200d🍽️ Mesero",
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.primary
-                )
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    Image(
+                        painter = painterResource(R.drawable.intimo_logo),
+                        contentDescription = "Íntimo",
+                        modifier = Modifier.size(22.dp),
+                    )
+                    Text(
+                        text = uiState.currentUserName?.takeIf { it.isNotBlank() } ?: "Mesero",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                }
 
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     IconButton(
@@ -148,7 +163,20 @@ fun WaiterMainScreen(
                     ) {
                         Icon(
                             Icons.Default.Refresh,
-                            contentDescription = "Actualizar",
+                            contentDescription = "Actualizar órdenes",
+                            tint = MaterialTheme.colorScheme.primary
+                        )
+                    }
+                    IconButton(
+                        onClick = { showOtaDialog = true },
+                        modifier = Modifier.background(
+                            MaterialTheme.colorScheme.primary.copy(alpha = 0.1f),
+                            RoundedCornerShape(12.dp)
+                        )
+                    ) {
+                        Icon(
+                            Icons.Default.SystemUpdate,
+                            contentDescription = "Actualizar app",
                             tint = MaterialTheme.colorScheme.primary
                         )
                     }
@@ -413,6 +441,14 @@ fun WaiterMainScreen(
                 }
             }
         }
+    }
+
+    if (showOtaDialog) {
+        OtaUpdateDialog(
+            onDismiss = { showOtaDialog = false },
+            lanServerUrl = uiState.serverUrl.takeIf { it.isNotBlank() },
+            autoCheck = true,
+        )
     }
 }
 

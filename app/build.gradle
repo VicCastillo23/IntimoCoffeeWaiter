@@ -15,8 +15,10 @@ android {
         applicationId "com.intimocoffee.waiter"
         minSdk 24
         targetSdk 34
-        versionCode 3
-        versionName "3.0.0"
+        versionCode 6
+        versionName "3.0.3"
+
+        buildConfigField "String", "OTA_MANIFEST_URL", "\"http://contabilidad.cafeintimo.mx/ota/version.json\""
 
         /**
          * IP del servidor IntimoCoffeeApp (tablet) si NSD/escaneo fallan.
