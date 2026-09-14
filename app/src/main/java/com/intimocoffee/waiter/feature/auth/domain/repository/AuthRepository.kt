@@ -15,4 +15,5 @@ interface AuthRepository {
     suspend fun revalidateSession(): Boolean
     suspend fun saveCurrentUser(user: User)
     suspend fun createDefaultUsers()
+    suspend fun verifyManagerAuthorization(username: String, password: String): User?
 }

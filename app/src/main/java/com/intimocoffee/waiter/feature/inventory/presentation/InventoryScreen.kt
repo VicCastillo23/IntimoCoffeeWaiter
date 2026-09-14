@@ -22,6 +22,8 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.intimocoffee.waiter.feature.inventory.domain.model.*
 import com.intimocoffee.waiter.feature.inventory.presentation.components.RestockDialog
+import com.intimocoffee.waiter.feature.inventory.presentation.components.StockAdjustmentDialog
+import com.intimocoffee.waiter.feature.inventory.presentation.components.ManagerAuthorizationDialog
 import java.text.NumberFormat
 import java.text.SimpleDateFormat
 import java.util.*
@@ -58,6 +60,12 @@ fun InventoryScreen(
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 IconButton(onClick = { viewModel.refreshData() }) {
                     Icon(Icons.Default.Refresh, contentDescription = "Actualizar")
+                }
+
+                OutlinedButton(onClick = { viewModel.showFullAdjustmentDialog() }) {
+                    Icon(Icons.Default.Remove, contentDescription = null, modifier = Modifier.size(16.dp))
+                    Spacer(Modifier.width(4.dp))
+                    Text("Ajustar")
                 }
                 
                 FilledTonalButton(
@@ -264,6 +272,46 @@ fun InventoryScreen(
                     )
                 }
             )
+        }
+
+        if (uiState.showFullAdjustmentDialog) {
+            StockAdjustmentDialog(
+                products = uiState.filteredProducts,
+                onDismiss = { viewModel.hideFullAdjustmentDialog() },
+                onAdjustStock = { productId, newQuantity, adjustmentType, reason, notes ->
+                    viewModel.requestStockAdjustment(
+                        productId = productId,
+                        newQuantity = newQuantity,
+                        adjustmentType = adjustmentType,
+                        reason = reason,
+                        notes = notes
+                    )
+                }
+            )
+        }
+
+        if (uiState.showManagerAuthDialog) {
+            val pending = uiState.pendingAdjustment
+            val decrease = pending?.let { it.newQuantity < it.currentStock } ?: true
+            ManagerAuthorizationDialog(
+                message = if (decrease) {
+                    "Vas a reducir el stock. Un gerente o administrador debe autorizar este movimiento."
+                } else {
+                    "Se requiere autorización de gerente para este ajuste."
+                },
+                isVerifying = uiState.isVerifyingManager,
+                error = uiState.managerAuthError,
+                onDismiss = { viewModel.dismissManagerAuthDialog() },
+                onAuthorize = { username, password ->
+                    viewModel.verifyManagerAndApplyAdjustment(username, password)
+                }
+            )
+        }
+
+        uiState.error?.let { error ->
+            LaunchedEffect(error) {
+                // Snackbar would need scaffold; error shown via state for now
+            }
         }
     }
 }

@@ -5,6 +5,7 @@ import androidx.lifecycle.viewModelScope
 import com.intimocoffee.waiter.feature.inventory.domain.repository.InventoryRepository
 import com.intimocoffee.waiter.feature.inventory.domain.model.*
 import com.intimocoffee.waiter.feature.inventory.presentation.components.StockAdjustmentType
+import com.intimocoffee.waiter.feature.auth.domain.repository.AuthRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
@@ -15,7 +16,8 @@ import javax.inject.Inject
 
 @HiltViewModel
 class InventoryViewModel @Inject constructor(
-    private val inventoryRepository: InventoryRepository
+    private val inventoryRepository: InventoryRepository,
+    private val authRepository: AuthRepository
 ) : ViewModel() {
     
     private val _uiState = MutableStateFlow(InventoryUiState())
@@ -110,6 +112,14 @@ class InventoryViewModel @Inject constructor(
     fun showStockAdjustmentDialog() {
         _uiState.update { it.copy(showStockAdjustmentDialog = true) }
     }
+
+    fun showFullAdjustmentDialog() {
+        _uiState.update { it.copy(showFullAdjustmentDialog = true) }
+    }
+
+    fun hideFullAdjustmentDialog() {
+        _uiState.update { it.copy(showFullAdjustmentDialog = false) }
+    }
     
     fun hideStockAdjustmentDialog() {
         _uiState.update { it.copy(showStockAdjustmentDialog = false) }
@@ -123,12 +133,100 @@ class InventoryViewModel @Inject constructor(
         _uiState.update { it.copy(showAllAlertsDialog = false) }
     }
     
-    fun adjustStock(
-        productId: Long, 
-        newQuantity: Int, 
-        adjustmentType: StockAdjustmentType, 
-        reason: String, 
+    fun requestStockAdjustment(
+        productId: Long,
+        newQuantity: Int,
+        adjustmentType: StockAdjustmentType,
+        reason: String,
         notes: String? = null
+    ) {
+        val product = _allProducts.value.find { it.productId == productId }
+        val currentStock = product?.currentStock ?: 0
+        val isDecrease = newQuantity < currentStock
+
+        if (isDecrease) {
+            _uiState.update {
+                it.copy(
+                    pendingAdjustment = PendingStockAdjustment(
+                        productId = productId,
+                        newQuantity = newQuantity,
+                        adjustmentType = adjustmentType,
+                        reason = reason,
+                        notes = notes,
+                        currentStock = currentStock
+                    ),
+                    showFullAdjustmentDialog = false,
+                    showManagerAuthDialog = true,
+                    managerAuthError = null
+                )
+            }
+        } else {
+            adjustStock(productId, newQuantity, adjustmentType, reason, notes)
+        }
+    }
+
+    fun dismissManagerAuthDialog() {
+        _uiState.update {
+            it.copy(
+                showManagerAuthDialog = false,
+                managerAuthError = null,
+                pendingAdjustment = null,
+                isVerifyingManager = false
+            )
+        }
+    }
+
+    fun verifyManagerAndApplyAdjustment(username: String, password: String) {
+        viewModelScope.launch {
+            _uiState.update { it.copy(isVerifyingManager = true, managerAuthError = null) }
+            val manager = authRepository.verifyManagerAuthorization(username, password)
+            if (manager == null) {
+                _uiState.update {
+                    it.copy(
+                        isVerifyingManager = false,
+                        managerAuthError = "Credenciales inválidas o sin permisos de gerente"
+                    )
+                }
+                return@launch
+            }
+
+            val pending = _uiState.value.pendingAdjustment
+            if (pending == null) {
+                _uiState.update { it.copy(isVerifyingManager = false, showManagerAuthDialog = false) }
+                return@launch
+            }
+
+            val authNote = "Autorizado por: ${manager.fullName} (@${manager.username})"
+            val mergedNotes = listOfNotNull(pending.notes?.takeIf { it.isNotBlank() }, authNote)
+                .joinToString("\n")
+                .takeIf { it.isNotBlank() }
+
+            _uiState.update {
+                it.copy(
+                    isVerifyingManager = false,
+                    showManagerAuthDialog = false,
+                    pendingAdjustment = null,
+                    managerAuthError = null
+                )
+            }
+            adjustStock(
+                productId = pending.productId,
+                newQuantity = pending.newQuantity,
+                adjustmentType = pending.adjustmentType,
+                reason = pending.reason,
+                notes = mergedNotes,
+                userId = manager.id
+            )
+        }
+    }
+
+    fun adjustStock(
+        productId: Long,
+        newQuantity: Int,
+        adjustmentType: StockAdjustmentType,
+        reason: String,
+        notes: String? = null,
+        userId: Long? = null
     ) {
         viewModelScope.launch {
             _uiState.update { it.copy(isLoading = true) }
@@ -150,10 +248,18 @@ class InventoryViewModel @Inject constructor(
                     }
                 )
                 
-                val success = inventoryRepository.adjustStock(adjustment, 1L) // TODO: Get real user ID
+                val success = inventoryRepository.adjustStock(
+                    adjustment,
+                    userId ?: authRepository.getCurrentUser()?.id ?: 1L
+                )
                 
                 if (success) {
-                    _uiState.update { it.copy(showStockAdjustmentDialog = false) }
+                    _uiState.update {
+                        it.copy(
+                            showStockAdjustmentDialog = false,
+                            showFullAdjustmentDialog = false
+                        )
+                    }
                     refreshData()
                 } else {
                     _uiState.update { 
@@ -206,7 +312,10 @@ class InventoryViewModel @Inject constructor(
                     )
                     
                     android.util.Log.d("InventoryViewModel", "Calling inventoryRepository.adjustStock...")
-                    val success = inventoryRepository.adjustStock(adjustment, 1L) // TODO: Get real user ID
+                    val success = inventoryRepository.adjustStock(
+                        adjustment,
+                        authRepository.getCurrentUser()?.id ?: 1L
+                    )
                     android.util.Log.d("InventoryViewModel", "adjustStock result: $success")
                     
                     if (success) {
@@ -255,6 +364,15 @@ class InventoryViewModel @Inject constructor(
     }
 }
 
+data class PendingStockAdjustment(
+    val productId: Long,
+    val newQuantity: Int,
+    val adjustmentType: StockAdjustmentType,
+    val reason: String,
+    val notes: String?,
+    val currentStock: Int
+)
+
 data class InventoryUiState(
     val isLoading: Boolean = false,
     val stockSummary: StockSummary? = null,
@@ -264,6 +382,11 @@ data class InventoryUiState(
     val selectedProductId: Long? = null,
     val showProductDetails: Boolean = false,
     val showStockAdjustmentDialog: Boolean = false,
+    val showFullAdjustmentDialog: Boolean = false,
+    val showManagerAuthDialog: Boolean = false,
+    val isVerifyingManager: Boolean = false,
+    val managerAuthError: String? = null,
+    val pendingAdjustment: PendingStockAdjustment? = null,
     val showAllAlertsDialog: Boolean = false,
     val error: String? = null
 )
