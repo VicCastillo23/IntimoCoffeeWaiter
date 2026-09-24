@@ -338,7 +338,7 @@ fun OrderEditScreen(
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
                                 Text(
-                                    text = "Tocar para personalizar",
+                                    text = "Tocar → personalizar",
                                     style = MaterialTheme.typography.labelSmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )

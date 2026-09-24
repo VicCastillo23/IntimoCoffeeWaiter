@@ -15,10 +15,10 @@
     <string name="login_password">Contraseña</string>
     <string name="login_password_show">Mostrar contraseña</string>
     <string name="login_password_hide">Ocultar contraseña</string>
-    <string name="login_help_title">Usuarios de la tablet POS (cafetería):</string>
-    <string name="login_help_subtitle">Los usuarios que crees en la tablet POS (Configuración → Usuarios) son los mismos aquí. Misma Wi‑Fi, app cafetería abierta y servidor en :8080; si falla el descubrimiento, define INTIMO_MAIN_SERVER_URL en gradle.properties del mesero.</string>
-    <string name="login_help_admin">• admin / admin123 (Administrador)</string>
-    <string name="login_help_manager">• manager / manager123 (Gerente)</string>
+    <string name="login_help_title">Usuarios de Contabilidad (nube) o tablet POS:</string>
+    <string name="login_help_subtitle">Entra con los usuarios de Contabilidad → Apps (pos.staff). Si Contabilidad no responde, se intenta la tablet POS en la misma Wi‑Fi.</string>
+    <string name="login_help_admin">• admin / Admin123 (Administrador)</string>
+    <string name="login_help_manager">• manager / Admin123 (Gerente)</string>
     <string name="login_help_mesero">• mesero1 / mesero123 (Mesero)</string>
     <string name="login_help_barista">• barista1 / barista123 (Barista)</string>
     <string name="login_help_cocinero">• cocinero1 / cocinero123 (Cocina)</string>

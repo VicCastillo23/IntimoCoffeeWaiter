@@ -54,32 +54,36 @@ class ServerDiscoveryService @Inject constructor(
      */
     suspend fun discoverMainServer(): String? {
         return withContext(Dispatchers.IO) {
+            val t0 = System.currentTimeMillis()
+            fun elapsed() = System.currentTimeMillis() - t0
+
             // 0. URL fija (gradle.properties → BuildConfig) — útil cuando NSD/escaneo fallan en la red
             val configured = BuildConfig.MAIN_SERVER_BASE_URL.trim()
             if (configured.isNotEmpty()) {
-                Log.i(TAG, "🔧 Trying MAIN_SERVER_BASE_URL from BuildConfig: $configured")
+                Log.i(TAG, "🔧 [${elapsed()}ms] Trying MAIN_SERVER_BASE_URL: $configured")
                 val validated = testDiscoverAtBaseUrl(configured)
                 if (validated != null) {
-                    Log.i(TAG, "✅ Using configured main server: $validated")
+                    Log.i(TAG, "✅ [${elapsed()}ms] Using configured main server: $validated")
                     return@withContext validated
                 }
                 Log.w(
                     TAG,
-                    "⚠️ MAIN_SERVER_BASE_URL no responde en /discover; probando NSD y escaneo…"
+                    "⚠️ [${elapsed()}ms] MAIN_SERVER_BASE_URL no responde; probando NSD y escaneo…",
                 )
             }
 
             // 1. NSD/mDNS (instant, no IP scanning)
-            Log.i(TAG, "🔍 Starting NSD discovery...")
+            Log.i(TAG, "🔍 [${elapsed()}ms] Starting NSD discovery (timeout 8s)...")
+            val nsdT0 = System.currentTimeMillis()
             val nsdUrl = discoverViaNsd()
+            Log.i(TAG, "🔍 [${elapsed()}ms] NSD finished in ${System.currentTimeMillis() - nsdT0}ms → $nsdUrl")
             if (nsdUrl != null) {
-                // Validate to avoid stale mDNS cache (conserva host:puerto del NSD)
                 val validated = testDiscoverAtBaseUrl(nsdUrl)
                 if (validated != null) {
-                    Log.i(TAG, "✅ NSD server validated: $validated")
+                    Log.i(TAG, "✅ [${elapsed()}ms] NSD server validated: $validated")
                     return@withContext validated
                 }
-                Log.w(TAG, "⚠️ NSD found $nsdUrl but validation failed (stale cache), falling back to IP scan")
+                Log.w(TAG, "⚠️ [${elapsed()}ms] NSD found $nsdUrl but validation failed, falling back to IP scan")
             }
 
             // 2. Fallback: limited-concurrency scan + common LAN subnets (VPN-safe)
@@ -106,16 +110,29 @@ class ServerDiscoveryService @Inject constructor(
                 add("10.0.0")
                 add("172.20.10") // hotspot iPhone
             }.distinct()
-            Log.w(TAG, "⚠️ NSD failed, scanning: ${subnets.joinToString(", ") { "$it.x" }} (localIp=$localIp)")
+            Log.w(
+                TAG,
+                "⚠️ [${elapsed()}ms] NSD failed, scanning: ${subnets.joinToString(", ") { "$it.x" }} (localIp=$localIp)",
+            )
 
+            val scanT0 = System.currentTimeMillis()
             val result = scanSubnetsForServer(subnets, localIp)
+            Log.i(TAG, "📡 [${elapsed()}ms] IP scan finished in ${System.currentTimeMillis() - scanT0}ms → $result")
             if (result != null) {
-                Log.i(TAG, "✅ Server found via IP scan at: $result")
+                Log.i(TAG, "✅ [${elapsed()}ms] Server found via IP scan at: $result")
             } else {
-                Log.w(TAG, "❌ Server not found in any subnet")
+                Log.w(TAG, "❌ [${elapsed()}ms] Server not found in any subnet")
             }
             result
         }
+    }
+
+    /** Revalida una URL ya conocida (caché de sesión). */
+    suspend fun validateKnownServer(baseUrl: String): String? {
+        val t0 = System.currentTimeMillis()
+        val ok = testDiscoverAtBaseUrl(baseUrl)
+        Log.i(TAG, "♻️ validateKnownServer($baseUrl) → $ok in ${System.currentTimeMillis() - t0}ms")
+        return ok
     }
 
     private suspend fun discoverViaNsd(): String? {

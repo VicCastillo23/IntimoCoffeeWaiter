@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.intimocoffee.waiter.feature.auth.domain.usecase.LoginUseCase
 import com.intimocoffee.waiter.feature.auth.domain.repository.AuthRepository
+import android.util.Log
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -17,6 +18,10 @@ class LoginViewModel @Inject constructor(
     private val authRepository: AuthRepository
 ) : ViewModel() {
     
+    companion object {
+        private const val TAG = "LoginViewModel"
+    }
+
     private val _uiState = MutableStateFlow(LoginUiState())
     val uiState: StateFlow<LoginUiState> = _uiState.asStateFlow()
     
@@ -56,8 +61,11 @@ class LoginViewModel @Inject constructor(
         )
         
         viewModelScope.launch {
+            val t0 = System.currentTimeMillis()
+            Log.i(TAG, "⏱️ UI login pressed user=${currentState.username}")
             loginUseCase(currentState.username, currentState.password)
                 .onSuccess { user ->
+                    Log.i(TAG, "✅ UI login OK in ${System.currentTimeMillis() - t0}ms (${user.username})")
                     _uiState.value = _uiState.value.copy(
                         isLoading = false,
                         isLoginSuccessful = true,
@@ -65,6 +73,7 @@ class LoginViewModel @Inject constructor(
                     )
                 }
                 .onFailure { error ->
+                    Log.w(TAG, "❌ UI login FAIL in ${System.currentTimeMillis() - t0}ms: ${error.message}")
                     _uiState.value = _uiState.value.copy(
                         isLoading = false,
                         errorMessage = error.message ?: "Error de autenticación"

@@ -415,29 +415,43 @@ private fun TableChipsRow(
         ) {
             items(tables) { table ->
                 val isSelected = selectedTable?.id == table.id
-                val tColor = when (table.status) {
-                    TableStatus.OCCUPIED -> MaterialTheme.colorScheme.error
+                val isOccupied = table.status == TableStatus.OCCUPIED
+                val accent = when (table.status) {
+                    TableStatus.OCCUPIED -> Color(0xFFF44336)
                     TableStatus.RESERVED -> MaterialTheme.colorScheme.tertiary
-                    else -> MaterialTheme.colorScheme.primary
+                    TableStatus.OUT_OF_SERVICE -> MaterialTheme.colorScheme.outline
+                    TableStatus.FREE -> MaterialTheme.colorScheme.primary
+                }
+                val fill = when {
+                    isOccupied -> accent
+                    isSelected -> accent.copy(alpha = 0.18f)
+                    else -> MaterialTheme.colorScheme.surfaceVariant
+                }
+                val labelColor = when {
+                    isOccupied -> Color.White
+                    isSelected -> accent
+                    else -> MaterialTheme.colorScheme.onSurfaceVariant
                 }
                 Surface(
                     onClick = { onSelect(table) },
                     modifier = Modifier.size(40.dp),
                     shape = RoundedCornerShape(8.dp),
-                    color = if (isSelected) tColor.copy(alpha = 0.18f)
-                            else MaterialTheme.colorScheme.surfaceVariant,
+                    color = fill,
                     border = BorderStroke(
-                        if (isSelected) 2.dp else 1.dp,
-                        tColor.copy(if (isSelected) 1f else 0.28f)
-                    )
+                        width = if (isSelected) 2.dp else 1.dp,
+                        color = when {
+                            isOccupied -> accent
+                            isSelected -> accent
+                            else -> accent.copy(alpha = 0.28f)
+                        },
+                    ),
                 ) {
                     Box(contentAlignment = Alignment.Center) {
                         Text(
                             table.number.toString(),
                             style = MaterialTheme.typography.labelMedium,
-                            fontWeight = if (isSelected) FontWeight.ExtraBold else FontWeight.Medium,
-                            color = if (isSelected) tColor
-                                    else MaterialTheme.colorScheme.onSurfaceVariant
+                            fontWeight = if (isSelected || isOccupied) FontWeight.ExtraBold else FontWeight.Medium,
+                            color = labelColor,
                         )
                     }
                 }

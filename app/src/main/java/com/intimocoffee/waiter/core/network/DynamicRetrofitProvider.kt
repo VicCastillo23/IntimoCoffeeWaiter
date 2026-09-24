@@ -47,29 +47,47 @@ class DynamicRetrofitProvider @Inject constructor(
     
     /**
      * Discovers the server and updates the cached service. Must be called before login.
+     * Si ya hay URL en caché y /discover responde, la reutiliza (evita NSD/escaneo en cada login).
      */
     suspend fun discoverAndRefreshService(): IntimoCoffeeApiService {
-        Log.i(TAG, "🔍 Discovering server...")
+        val t0 = System.currentTimeMillis()
+        fun elapsed() = System.currentTimeMillis() - t0
+
+        val cached = currentBaseUrl.trim()
+        if (cached.isNotEmpty() && !cached.contains("10.0.2.2")) {
+            Log.i(TAG, "♻️ [${elapsed()}ms] Probando servidor en caché: $cached")
+            val stillAlive = serverDiscoveryService.validateKnownServer(cached)
+            if (stillAlive != null) {
+                synchronized(this) {
+                    currentBaseUrl = stillAlive
+                    if (apiService == null) apiService = buildService(stillAlive)
+                }
+                Log.i(TAG, "✅ [${elapsed()}ms] Caché OK — sin rediscovery completo")
+                return apiService!!
+            }
+            Log.w(TAG, "⚠️ [${elapsed()}ms] Caché muerta; discovery completo…")
+        }
+
+        Log.i(TAG, "🔍 [${elapsed()}ms] Discovering server (full)...")
         val discoveredUrl = serverDiscoveryService.discoverMainServer()
         val baseUrl = when {
             discoveredUrl != null -> {
-                Log.i(TAG, "✅ Discovered server: $discoveredUrl")
+                Log.i(TAG, "✅ [${elapsed()}ms] Discovered server: $discoveredUrl")
                 discoveredUrl
             }
             isLikelyEmulator() -> {
-                Log.w(TAG, "⚠️ Discovery failed, using emulator host: $EMULATOR_LOOPBACK_BASE_URL")
+                Log.w(TAG, "⚠️ [${elapsed()}ms] Discovery failed, using emulator host: $EMULATOR_LOOPBACK_BASE_URL")
                 EMULATOR_LOOPBACK_BASE_URL
             }
             else -> {
                 Log.e(
                     TAG,
-                    "❌ Discovery failed on dispositivo físico. Añade en gradle.properties la IP de la tablet: " +
-                        "INTIMO_MAIN_SERVER_URL=http://192.168.x.x:8080/ y Sync + rebuild."
+                    "❌ [${elapsed()}ms] Discovery failed on dispositivo físico. Añade en gradle.properties la IP de la tablet: " +
+                        "INTIMO_MAIN_SERVER_URL=http://192.168.x.x:8080/ y Sync + rebuild.",
                 )
-                // Never set 10.0.2.2 on a physical device — leave unset and surface error.
                 throw IllegalStateException(
                     "No se encontró la tablet POS. En gradle.properties del proyecto mesero: " +
-                        "INTIMO_MAIN_SERVER_URL=http://IP_DE_LA_TABLET:8080/ y Sync + recompilar."
+                        "INTIMO_MAIN_SERVER_URL=http://IP_DE_LA_TABLET:8080/ y Sync + recompilar.",
                 )
             }
         }
@@ -77,6 +95,7 @@ class DynamicRetrofitProvider @Inject constructor(
             currentBaseUrl = baseUrl
             apiService = buildService(baseUrl)
         }
+        Log.i(TAG, "✅ [${elapsed()}ms] Retrofit listo → $baseUrl")
         return apiService!!
     }
     

@@ -10,6 +10,7 @@ import com.intimocoffee.waiter.core.network.DynamicRetrofitProvider
 import com.intimocoffee.waiter.core.network.LoginRequest
 import com.intimocoffee.waiter.core.network.LoginResponse
 import com.intimocoffee.waiter.core.network.UserLoginResponse
+import com.intimocoffee.waiter.feature.accounting.data.AccountingStaffAuthClient
 import com.intimocoffee.waiter.feature.auth.data.mapper.toDomainModel
 import com.intimocoffee.waiter.feature.auth.domain.model.User
 import com.intimocoffee.waiter.feature.auth.domain.model.UserRole
@@ -24,10 +25,12 @@ class AuthRepositoryImpl @Inject constructor(
     private val userDao: UserDao,
     private val dataStore: DataStore<Preferences>,
     private val retrofitProvider: DynamicRetrofitProvider,
+    private val accountingStaffAuthClient: AccountingStaffAuthClient,
 ) : AuthRepository {
     
     companion object {
         private val CURRENT_USER_KEY = stringPreferencesKey("current_user")
+        private const val TAG = "AuthRepository"
     }
     
     override suspend fun login(username: String, password: String): Result<User> {
@@ -35,36 +38,74 @@ class AuthRepositoryImpl @Inject constructor(
         if (trimmedUser.isEmpty()) {
             return Result.failure(IllegalArgumentException("Indica un usuario"))
         }
+        val t0 = System.currentTimeMillis()
+        fun elapsed() = System.currentTimeMillis() - t0
+
+        Log.i(TAG, "⏱️ login start user=$trimmedUser")
+
+        // 1) Contabilidad AWS (pos.staff) — no depende de la tablet POS.
+        if (accountingStaffAuthClient.isConfigured()) {
+            Log.i(TAG, "⏱️ [${elapsed()}ms] trying Contabilidad AWS…")
+            val remote = accountingStaffAuthClient.verifyLogin(trimmedUser, password)
+            if (remote != null && remote.isActive) {
+                Log.i(TAG, "✅ [${elapsed()}ms] login OK vía Contabilidad (${remote.username})")
+                // Descubrir POS en segundo plano para pedidos; no bloquea el login.
+                try {
+                    retrofitProvider.discoverAndRefreshService()
+                    Log.i(TAG, "⏱️ [${elapsed()}ms] POS discovery OK → ${retrofitProvider.getCurrentServerUrl()}")
+                } catch (e: Exception) {
+                    Log.w(
+                        TAG,
+                        "⚠️ [${elapsed()}ms] Contabilidad OK pero POS aún no visible: ${e.message}",
+                    )
+                }
+                return Result.success(remote)
+            }
+            Log.w(TAG, "⚠️ [${elapsed()}ms] Contabilidad rechazó o no respondió; probando POS…")
+        }
+
+        // 2) Fallback: tablet POS (usuarios Room locales).
         return try {
             val service = retrofitProvider.discoverAndRefreshService()
+            Log.i(
+                TAG,
+                "⏱️ [${elapsed()}ms] discovery done → ${retrofitProvider.getCurrentServerUrl()}",
+            )
             if (retrofitProvider.isUsingEmulatorLoopbackOnPhysicalDevice()) {
                 return Result.failure(
                     Exception(
-                        "No se encontró la tablet POS. En gradle.properties del proyecto mesero: " +
-                            "INTIMO_MAIN_SERVER_URL=http://IP_DE_LA_TABLET:8080/ y Sync + recompilar."
-                    )
+                        "No se encontró la tablet POS ni Contabilidad. Revisa Wi‑Fi / usuarios en Contabilidad.",
+                    ),
                 )
             }
+            val apiT0 = System.currentTimeMillis()
             val response = service.login(LoginRequest(username = trimmedUser, password = password))
+            Log.i(
+                TAG,
+                "⏱️ [${elapsed()}ms] POST /api/login http=${response.code()} in ${System.currentTimeMillis() - apiT0}ms",
+            )
 
             if (response.isSuccessful) {
                 val body: LoginResponse? = response.body()
                 val userDto: UserLoginResponse? = body?.data
                 if (body?.success == true && userDto != null && userDto.isActive) {
+                    Log.i(TAG, "✅ [${elapsed()}ms] login OK vía POS ${userDto.username}")
                     Result.success(userDto.toDomainModel())
                 } else {
+                    Log.w(TAG, "❌ [${elapsed()}ms] login rejected by POS")
                     Result.failure(Exception("Usuario o contraseña incorrectos"))
                 }
             } else {
+                Log.w(TAG, "❌ [${elapsed()}ms] login HTTP ${response.code()}")
                 Result.failure(Exception("Usuario o contraseña incorrectos"))
             }
         } catch (e: Exception) {
-            Log.e("AuthRepository", "login failed (¿servidor IntimoCoffeeApp en la misma WiFi?)", e)
+            Log.e(TAG, "❌ [${elapsed()}ms] login failed", e)
             Result.failure(
                 Exception(
-                    "No se pudo conectar con la tablet POS (misma Wi‑Fi, app cafetería abierta).",
-                    e
-                )
+                    "No se pudo autenticar (Contabilidad/POS). Misma Wi‑Fi o datos móviles OK.",
+                    e,
+                ),
             )
         }
     }
@@ -93,21 +134,28 @@ class AuthRepositoryImpl @Inject constructor(
 
     override suspend fun revalidateSession(): Boolean {
         val local = getCurrentUser() ?: return false
+        // Prefer Contabilidad (mismo id que pos.staff tras login AWS).
+        if (accountingStaffAuthClient.isConfigured()) {
+            val remote = accountingStaffAuthClient.getStaffById(local.id)
+            if (remote != null) {
+                saveCurrentUser(remote)
+                return true
+            }
+        }
         return try {
             val service = retrofitProvider.discoverAndRefreshService()
             val response = service.validateSession(local.id)
             val body = response.body()
             val ok = response.isSuccessful && body?.success == true && body.data != null && body.data.isActive
             if (!ok) {
-                Log.w("AuthRepository", "Session revalidation failed; clearing DataStore")
+                Log.w(TAG, "Session revalidation failed; clearing DataStore")
                 logout()
             } else {
-                // Refresh cached profile from POS
                 saveCurrentUser(body!!.data!!.toDomainModel())
             }
             ok
         } catch (e: Exception) {
-            Log.e("AuthRepository", "Session revalidation error; clearing DataStore", e)
+            Log.e(TAG, "Session revalidation error; clearing DataStore", e)
             logout()
             false
         }
@@ -120,8 +168,13 @@ class AuthRepositoryImpl @Inject constructor(
     }
     
     override suspend fun createDefaultUsers() {
-        // Online-only auth: los usuarios se gestionan en el servidor principal.
-        // No creamos usuarios locales por defecto.
+        // Online-only auth: usuarios en Contabilidad (pos.staff) o tablet POS.
+    }
+
+    override suspend fun verifyManagerAuthorization(username: String, password: String): User? {
+        val result = login(username, password)
+        val user = result.getOrNull() ?: return null
+        return user.takeIf { it.role.hasManagerAccess() }
     }
 }
 

@@ -15,8 +15,8 @@ android {
         applicationId "com.intimocoffee.waiter"
         minSdk 24
         targetSdk 34
-        versionCode 6
-        versionName "3.0.3"
+        versionCode 10
+        versionName "3.0.7"
 
         buildConfigField "String", "OTA_MANIFEST_URL", "\"http://contabilidad.cafeintimo.mx/ota/version.json\""
 
@@ -29,6 +29,9 @@ android {
         buildConfigField "String", "MAIN_SERVER_BASE_URL", "\"${mainServerProp.toString().replace("\\", "\\\\").replace("\"", "\\\"")}\""
         /** API Loyalty en la nube (HTTPS). Mesero → Fidelity / QR usa Retrofit @Named("aws"). */
         buildConfigField "String", "LOYALTY_API_BASE_URL", "\"https://api.cafeintimo.mx\""
+        /** Contabilidad: login de staff (`pos.staff`) sin depender de la tablet POS. */
+        buildConfigField "String", "ACCOUNTING_POS_BASE_URL", "\"https://api.cafeintimo.mx\""
+        buildConfigField "String", "ACCOUNTING_POS_INGEST_SECRET", "\"SECRETPRUEBA\""
 
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables {
