@@ -8,6 +8,8 @@ data class Order(
     val orderNumber: String,
     val tableId: Long? = null,
     val tableName: String? = null,
+    /** Submesa dentro de [tableId] (Mesa 24.1 → 1); null = cuenta principal. */
+    val subTable: Int? = null,
     val customerName: String? = null,
     val status: OrderStatus,
     val items: List<OrderItem>,

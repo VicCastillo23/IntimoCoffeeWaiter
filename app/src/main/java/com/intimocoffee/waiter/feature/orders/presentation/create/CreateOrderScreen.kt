@@ -165,6 +165,21 @@ fun CreateOrderScreen(
                 selectedTable = uiState.selectedTable,
                 onSelect = viewModel::selectTable
             )
+            uiState.selectedTable?.let { table ->
+                SubTableChipsRow(
+                    tableNumber = table.number,
+                    options = uiState.subTableOptions,
+                    names = uiState.subTableNames,
+                    selected = uiState.selectedSubTable,
+                    onSelect = viewModel::selectSubTable,
+                    onAdd = viewModel::addSubTable,
+                )
+                AccountNameRow(
+                    loyaltyName = uiState.fidelityCustomer?.name?.takeIf { it.isNotBlank() },
+                    accountName = uiState.customerName,
+                    onAccountNameChange = viewModel::updateCustomerName,
+                )
+            }
         }
 
         // 3.5 Sugerencia de cliente (mesa con órdenes activas)
@@ -456,6 +471,108 @@ private fun TableChipsRow(
                     }
                 }
             }
+        }
+    }
+}
+
+// ─── Cuenta dentro de la mesa: principal (24) o submesas (24.1, 24.2…) ───────
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun SubTableChipsRow(
+    tableNumber: Int,
+    options: List<Int>,
+    names: Map<Int, String>,
+    selected: Int?,
+    onSelect: (Int?) -> Unit,
+    onAdd: () -> Unit,
+) {
+    fun chipLabel(sub: Int?): String {
+        val number = if (sub == null) "$tableNumber" else "$tableNumber.$sub"
+        return names[sub ?: 0]?.let { "$number · $it" } ?: number
+    }
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(MaterialTheme.colorScheme.surface)
+            .padding(horizontal = 12.dp, vertical = 2.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(6.dp)
+    ) {
+        Text(
+            text = "Cuenta:",
+            style = MaterialTheme.typography.labelMedium,
+            fontWeight = FontWeight.SemiBold,
+            color = MaterialTheme.colorScheme.primary
+        )
+        LazyRow(
+            modifier = Modifier.weight(1f),
+            horizontalArrangement = Arrangement.spacedBy(6.dp)
+        ) {
+            item(key = "main") {
+                FilterChip(
+                    selected = selected == null,
+                    onClick = { onSelect(null) },
+                    label = {
+                        Text(
+                            chipLabel(null),
+                            fontWeight = if (selected == null) FontWeight.ExtraBold else FontWeight.Medium
+                        )
+                    }
+                )
+            }
+            items(options, key = { "sub_$it" }) { sub ->
+                FilterChip(
+                    selected = selected == sub,
+                    onClick = { onSelect(sub) },
+                    label = {
+                        Text(
+                            chipLabel(sub),
+                            fontWeight = if (selected == sub) FontWeight.ExtraBold else FontWeight.Medium
+                        )
+                    }
+                )
+            }
+            item(key = "add") {
+                AssistChip(
+                    onClick = onAdd,
+                    label = { Text("Dividir") },
+                    leadingIcon = { Icon(Icons.Default.CallSplit, null, Modifier.size(16.dp)) }
+                )
+            }
+        }
+    }
+}
+
+// ─── Nombre de la cuenta: lealtad si hay, si no escrito a mano (opcional) ────
+@Composable
+private fun AccountNameRow(
+    loyaltyName: String?,
+    accountName: String,
+    onAccountNameChange: (String) -> Unit,
+) {
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(MaterialTheme.colorScheme.surface)
+            .padding(horizontal = 12.dp, vertical = 2.dp)
+    ) {
+        if (loyaltyName != null) {
+            Text(
+                "Cuenta a nombre de $loyaltyName (lealtad)",
+                style = MaterialTheme.typography.labelMedium,
+                fontWeight = FontWeight.SemiBold,
+                color = MaterialTheme.colorScheme.primary
+            )
+        } else {
+            OutlinedTextField(
+                value = accountName,
+                onValueChange = { onAccountNameChange(it.take(60)) },
+                modifier = Modifier.fillMaxWidth(),
+                singleLine = true,
+                label = { Text("Nombre de la cuenta (opcional)") },
+                placeholder = { Text("Ej. Ana — o busca su teléfono abajo") },
+                shape = RoundedCornerShape(12.dp)
+            )
         }
     }
 }

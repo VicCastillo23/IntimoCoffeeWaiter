@@ -515,7 +515,8 @@ fun WaiterOrderCard(
                     Spacer(modifier = Modifier.height(4.dp))
                     
                     Text(
-                        text = "Mesa: ${order.tableName ?: order.tableId}",
+                        text = order.tableName?.takeIf { it.startsWith("Mesa") }
+                            ?: "Mesa: ${order.tableName ?: order.tableId}",
                         style = MaterialTheme.typography.titleLarge,
                         fontWeight = FontWeight.SemiBold,
                         color = MaterialTheme.colorScheme.onSurface

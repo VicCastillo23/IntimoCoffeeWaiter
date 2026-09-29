@@ -100,7 +100,9 @@ data class CreateOrderRequest(
     @SerialName("customerName") val customerName: String?,
     @SerialName("items") val items: List<CreateOrderItemRequest>,
     @SerialName("notes") val notes: String?,
-    @SerialName("createdBy") val createdBy: Long
+    @SerialName("createdBy") val createdBy: Long,
+    /** Submesa (Mesa 24.1 → 1); null = cuenta principal. */
+    @SerialName("subTable") val subTable: Int? = null,
 )
 
 @Serializable
@@ -165,6 +167,7 @@ data class OrderResponse(
     @SerialName("orderNumber") val orderNumber: String,
     @SerialName("tableId") val tableId: Long?,
     @SerialName("tableName") val tableName: String?,
+    @SerialName("subTable") val subTable: Int? = null,
     @SerialName("customerName") val customerName: String?,
     @SerialName("status") val status: String,
     @SerialName("items") val items: List<OrderItemResponse>,

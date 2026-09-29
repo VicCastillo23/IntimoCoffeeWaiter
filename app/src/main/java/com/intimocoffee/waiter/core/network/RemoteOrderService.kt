@@ -35,10 +35,11 @@ class RemoteOrderService @Inject constructor(
         customerName: String?,
         cartItems: List<CartItem>,
         notes: String?,
-        createdBy: Long
+        createdBy: Long,
+        subTable: Int? = null,
     ): Result<Long> {
         return try {
-            Log.d("RemoteOrderService", "Creating order on server - Table: $tableId, Items: ${cartItems.size}")
+            Log.d("RemoteOrderService", "Creating order on server - Table: $tableId.${subTable ?: 0}, Items: ${cartItems.size}")
             
             val createOrderItems = cartItems.map { cartItem ->
                 CreateOrderItemRequest(
@@ -59,7 +60,8 @@ class RemoteOrderService @Inject constructor(
                 customerName = customerName,
                 items = createOrderItems,
                 notes = notes,
-                createdBy = createdBy
+                createdBy = createdBy,
+                subTable = subTable,
             )
             
             Log.d("RemoteOrderService", "Sending request to server (API-First): $request")

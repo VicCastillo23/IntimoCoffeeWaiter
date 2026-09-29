@@ -17,6 +17,7 @@ import com.intimocoffee.waiter.feature.orders.domain.model.CartItem
 import com.intimocoffee.waiter.feature.orders.domain.model.Order
 import com.intimocoffee.waiter.feature.orders.domain.model.OrderItem
 import com.intimocoffee.waiter.feature.orders.domain.model.OrderStatus
+import com.intimocoffee.waiter.feature.orders.domain.model.displayableAccountName
 import com.intimocoffee.waiter.feature.orders.domain.repository.OrderRepository
 import com.intimocoffee.waiter.feature.products.domain.model.Category
 import com.intimocoffee.waiter.feature.products.domain.model.ParentCategory
@@ -47,6 +48,12 @@ data class CreateOrderUiState(
     val orderPlacementMode: OrderPlacementMode = OrderPlacementMode.TABLE,
     val takeoutCustomerName: String = "",
     val selectedTable: Table? = null,
+    /** Submesa elegida para la orden (null = cuenta principal de la mesa). */
+    val selectedSubTable: Int? = null,
+    /** Submesas disponibles en la mesa elegida (activas en POS + recién creadas con "Dividir"). */
+    val subTableOptions: List<Int> = emptyList(),
+    /** Nombre por cuenta abierta en la mesa (clave 0 = principal), tomado de sus órdenes. */
+    val subTableNames: Map<Int, String> = emptyMap(),
     val availableTables: List<Table> = emptyList(),
     val products: List<Product> = emptyList(),
     // Categorías padre (nivel superior, p1-p7)
@@ -218,6 +225,10 @@ class CreateOrderViewModel @Inject constructor(
         _uiState.value = _uiState.value.copy(
             orderPlacementMode = OrderPlacementMode.TABLE,
             selectedTable = table,
+            selectedSubTable = null,
+            subTableOptions = emptyList(),
+            subTableNames = emptyMap(),
+            customerName = "",
             showTableSelector = false,
             showCustomerSuggestion = false,
             suggestedCustomerName = null
@@ -226,14 +237,22 @@ class CreateOrderViewModel @Inject constructor(
             try {
                 val result = remoteOrderService.getActiveOrdersFromServer()
                 if (result.isSuccess) {
-                    val suggestion = result.getOrNull()
-                        ?.filter { it.tableId == table.id && !it.customerName.isNullOrBlank() }
-                        ?.firstOrNull()
-                        ?.customerName
-                    if (!suggestion.isNullOrBlank()) {
-                        _uiState.value = _uiState.value.copy(
-                            suggestedCustomerName = suggestion,
-                            showCustomerSuggestion = true
+                    val accounts = result.getOrNull().orEmpty()
+                        .filter { it.tableId == table.id }
+                        .groupBy { it.subTable?.takeIf { sub -> sub > 0 } ?: 0 }
+                    val names = accounts.mapNotNull { (key, orders) ->
+                        orders.sortedByDescending { it.createdAt }
+                            .firstNotNullOfOrNull { displayableAccountName(it.customerName) }
+                            ?.let { key to it }
+                    }.toMap()
+                    if (_uiState.value.selectedTable?.id == table.id) {
+                        val state = _uiState.value
+                        _uiState.value = state.copy(
+                            subTableOptions = accounts.keys.filter { it > 0 }.sorted(),
+                            subTableNames = names,
+                            customerName = state.customerName.ifBlank {
+                                names[state.selectedSubTable ?: 0].orEmpty()
+                            },
                         )
                     }
                 }
@@ -241,6 +260,27 @@ class CreateOrderViewModel @Inject constructor(
                 Log.w("CreateOrderViewModel", "Could not fetch active orders for suggestion: ${e.message}")
             }
         }
+    }
+
+    fun selectSubTable(subTable: Int?) {
+        val sub = subTable?.takeIf { it > 0 }
+        val state = _uiState.value
+        _uiState.value = state.copy(
+            selectedSubTable = sub,
+            customerName = state.subTableNames[sub ?: 0].orEmpty(),
+        )
+    }
+
+    /** "Dividir mesa": crea la siguiente submesa (24.1, 24.2…) y la selecciona. */
+    fun addSubTable() {
+        val state = _uiState.value
+        if (state.selectedTable == null) return
+        val next = (state.subTableOptions.maxOrNull() ?: 0) + 1
+        _uiState.value = state.copy(
+            subTableOptions = state.subTableOptions + next,
+            selectedSubTable = next,
+            customerName = "",
+        )
     }
 
     fun showTableSelector() {
@@ -597,19 +637,25 @@ class CreateOrderViewModel @Inject constructor(
                 )
                 
                 // Create order directly on the main server using API
+                val accountName = displayableAccountName(currentState.fidelityCustomer?.name)
+                    ?: displayableAccountName(currentState.customerName)
                 val customerLabel = when {
                     takeout -> currentState.takeoutCustomerName.trim()
-                    else -> currentState.customerName.ifBlank {
-                        currentState.customerPhone.ifBlank { null }
-                    }
+                    else -> accountName ?: currentState.customerPhone.ifBlank { null }
                 }
+                val subTable = if (takeout) null else currentState.selectedSubTable?.takeIf { it > 0 }
                 val result = remoteOrderService.createOrderOnServer(
                     tableId = if (takeout) null else selectedTable!!.id,
-                    tableName = if (takeout) "Para llevar" else selectedTable!!.displayName,
+                    tableName = if (takeout) "Para llevar" else {
+                        val base = if (subTable != null) "Mesa ${selectedTable!!.number}.$subTable"
+                        else "Mesa ${selectedTable!!.number}"
+                        accountName?.let { "$base · $it" } ?: base
+                    },
                     customerName = customerLabel,
                     cartItems = currentState.cartItems,
                     notes = null,
-                    createdBy = createdByUserId
+                    createdBy = createdByUserId,
+                    subTable = subTable,
                 )
                 
                 val orderId = result.getOrNull() ?: 0L

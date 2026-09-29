@@ -60,6 +60,7 @@ object ApiMappers {
             orderNumber = response.orderNumber,
             tableId = response.tableId,
             tableName = response.tableName,
+            subTable = response.subTable?.takeIf { it > 0 },
             customerName = response.customerName,
             status = mapToOrderStatus(response.status),
             items = response.items.map { mapToOrderItem(it).copy(orderId = response.id) },
